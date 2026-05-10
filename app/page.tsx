@@ -34,7 +34,9 @@ export default function Home() {
   
   const defaultForm = {
     store_name: "", total_amount: "", expense_type: "", description: "", 
-    eco_score: 50, is_local_business: false, items: [] as any[], color: "#10b981"
+    eco_score: 50, is_local_business: false, items: [] as any[], color: "#10b981",
+    payment_method: "",
+    created_at: new Date().toISOString()
   };
   const [formData, setFormData] = useState(defaultForm);
 
@@ -105,6 +107,24 @@ export default function Home() {
         }
         console.log("API Response result:", result);
         setData(result);
+
+        // Save the scanned results to Supabase history
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { error: saveError } = await supabase.from("receipts").insert({
+            user_id: user.id,
+            store_name: result.storeName || "Unknown Store",
+            total_amount: result.totalAmount || 0,
+            expense_type: result.category || "Scanned",
+            is_local_business: result.isLocalBusiness || false,
+            description: result.ecoTip || "",
+            items: result.items || [],
+            eco_score: result.ecoScore || 50,
+            color: "#10b981", // Default color for scanned entries
+          });
+          if (saveError) console.error("Error saving scan to history:", saveError);
+        }
+
         fetchHistory();
       } catch (err: any) {
         console.error(err);
@@ -197,7 +217,6 @@ export default function Home() {
                   <div className="grid gap-2">
                     <p><span className="font-semibold">Store:</span> {data.storeName}</p>
                     <p><span className="font-semibold">Total:</span> ${data.totalAmount?.toFixed(2)}</p>
-                    <p><span className="font-semibold">Local business:</span> {data.isLocalBusiness ? "Yes" : "No"}</p>
                     <p><span className="font-semibold">Eco tip:</span> {data.ecoTip}</p>
                   </div>
                   {data.items?.length > 0 && (
@@ -234,7 +253,13 @@ export default function Home() {
                       <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center font-bold">{r.eco_score}</div>
                       <div>
                         <p className="font-bold">{r.store_name}</p>
-                        <p className="text-xs text-muted-foreground">{r.expense_type || "No category"}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-muted-foreground">{r.expense_type || "No category"}</p>
+                          <span className="text-[10px] text-muted-foreground/60">•</span>
+                          <p className="text-[10px] text-muted-foreground/60">
+                            {new Date(r.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                          </p>
+                        </div>
                       </div>
                     </div>
                     <p className="font-mono font-bold">${r.total_amount?.toFixed(2)}</p>
@@ -260,7 +285,9 @@ export default function Home() {
                             eco_score: r.eco_score || 50,
                             is_local_business: r.is_local_business || false,
                             items: r.items || [],
-                            color: r.color || "#10b981"
+                            color: r.color || "#10b981",
+                            payment_method: r.payment_method || "",
+                            created_at: r.created_at
                           }); 
                           setIsModalOpen(true); 
                         }}>Edit</Button>
@@ -291,6 +318,15 @@ export default function Home() {
             <CardContent className="space-y-4">
               <Input placeholder="Store Name" value={formData.store_name || ""} onChange={e => setFormData({...formData, store_name: e.target.value})} />
               <Input placeholder="Amount" type="number" value={formData.total_amount || ""} onChange={e => setFormData({...formData, total_amount: e.target.value})} />
+              <Input placeholder="Payment Method (e.g. Card, Cash)" value={formData.payment_method || ""} onChange={e => setFormData({...formData, payment_method: e.target.value})} />
+              <div className="space-y-1">
+                <Label className="text-[10px] text-muted-foreground uppercase font-bold px-1">Date & Time</Label>
+                <Input 
+                  type="datetime-local" 
+                  value={formData.created_at ? new Date(new Date(formData.created_at).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ""} 
+                  onChange={e => setFormData({...formData, created_at: new Date(e.target.value).toISOString()})} 
+                />
+              </div>
               <div className="flex items-center gap-2">
                 <input type="color" value={formData.color} onChange={e => setFormData({...formData, color: e.target.value})} className="w-10 h-10 border-0" />
                 <Label>Tag Color</Label>

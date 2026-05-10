@@ -19,7 +19,6 @@ export async function POST(req: Request) {
       schema: z.object({
         storeName: z.string(),
         totalAmount: z.number(),
-        isLocalBusiness: z.boolean(),
         items: z.array(z.object({
           name: z.string(),
           price: z.number(),         // Price for the total amount of this item
