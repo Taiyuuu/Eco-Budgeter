@@ -1,3 +1,4 @@
+//AI assisted code
 "use client";
 
 import { useState, useEffect } from "react";
