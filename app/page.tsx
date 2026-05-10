@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { 
   Upload, Leaf, MapPin, Receipt, Loader2, History, Plus, Edit2, 
   Trash2, X, ChevronDown, ChevronUp, Save, BarChart3, Settings2, 
-  PieChart as PieChartIcon, BrainCircuit 
+  PieChart as PieChartIcon, BrainCircuit, User, LogOut, Settings
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,19 +12,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
+import Link from "next/link";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
 export default function Home() {
   const supabase = createClient();
   const [activeTab, setActiveTab] = useState<"dashboard" | "scanner">("scanner");
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   
   // Data States
   const [history, setHistory] = useState<any[]>([]);
-  const [profile, setProfile] = useState({ monthly_income: 0, saving_goal: 0, scheduled_expenses: 0 });
+  const [profile, setProfile] = useState({ monthly_income: 0, saving_goal: 0, scheduled_expenses: 0, username: "", avatar_url: "" });
   const [data, setData] = useState<any>(null); // Last scan result
   const [scanError, setScanError] = useState<string | null>(null);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   // Modal & Form States
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -36,11 +39,13 @@ export default function Home() {
     store_name: "", total_amount: "", expense_type: "", description: "", 
     eco_score: 50, is_local_business: false, items: [] as any[], color: "#10b981",
     payment_method: "",
-    created_at: ""
+    created_at: "",
+    image_urls: [] as string[]
   };
   const [formData, setFormData] = useState(defaultForm);
 
   useEffect(() => { 
+    setMounted(true);
     fetchHistory(); 
     fetchProfile();
   }, []);
@@ -60,6 +65,35 @@ export default function Home() {
   // --- Financial Calculations ---
   const totalSpent = history.reduce((sum, r) => sum + (r.total_amount || 0), 0);
   const remainingBudget = profile.monthly_income - profile.scheduled_expenses - profile.saving_goal - totalSpent;
+
+  // Calculate Budget Progress Percentage
+  let budgetProgressPercentage: number | string = 0;
+  let isBudgetProgressOver = false;
+  let displayBudgetProgress = "0%";
+
+  if (mounted) {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const currentDayOfMonth = now.getDate(); // 1-31
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate(); // Total days in current month
+
+    const monthlyNetIncome = profile.monthly_income - profile.scheduled_expenses;
+
+    if (monthlyNetIncome > 0 && daysInMonth > 0) {
+      const proportionalBudget = monthlyNetIncome * (currentDayOfMonth / daysInMonth);
+      if (proportionalBudget > 0) {
+        budgetProgressPercentage = (totalSpent / proportionalBudget) * 100;
+      } else if (totalSpent > 0) {
+        budgetProgressPercentage = "Over Budget"; // Spent money but no proportional budget
+      }
+    } else if (totalSpent > 0) {
+      budgetProgressPercentage = "Over Budget"; // No positive net income, but there are expenses
+    }
+
+    displayBudgetProgress = typeof budgetProgressPercentage === 'number' ? `${budgetProgressPercentage.toFixed(0)}%` : budgetProgressPercentage;
+    isBudgetProgressOver = typeof budgetProgressPercentage === 'number' ? budgetProgressPercentage > 100 : budgetProgressPercentage === "Over Budget";
+  }
 
   const avgEcoScore = history.length > 0 
     ? Math.round(history.reduce((sum, r) => sum + (r.eco_score || 0), 0) / history.length) 
@@ -153,6 +187,66 @@ export default function Home() {
     };
   };
 
+  const handleAdditionalImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setLoading(true);
+    try {
+      const uploadedUrls = [...(formData.image_urls || [])];
+      for (const file of files) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const filePath = `manual-entries/${fileName}`;
+
+        // Note: Ensure a bucket named 'receipts' exists in your Supabase Storage
+        const { error: uploadError } = await supabase.storage
+          .from("receipts")
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data } = supabase.storage.from("receipts").getPublicUrl(filePath);
+        uploadedUrls.push(data.publicUrl);
+      }
+      setFormData({ ...formData, image_urls: uploadedUrls });
+    } catch (err) {
+      console.error("Error uploading images:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const analyzeManualExpense = async () => {
+    if (!formData.store_name && !formData.description) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/public/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          storeName: formData.store_name,
+          totalAmount: parseFloat(formData.total_amount as string) || 0,
+          description: formData.description,
+          items: formData.items
+        }),
+      });
+      const result = await res.json();
+      if (res.ok) {
+        setFormData(prev => ({ 
+          ...prev, 
+          eco_score: result.ecoScore || prev.eco_score,
+          expense_type: result.category || prev.expense_type,
+          description: result.ecoTip ? (prev.description ? `${prev.description}\n\nTip: ${result.ecoTip}` : result.ecoTip) : prev.description
+        }));
+      }
+    } catch (err) {
+      console.error("AI Analysis failed:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-background p-4 md:p-8 pb-24">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -161,24 +255,53 @@ export default function Home() {
             <Leaf className="w-8 h-8 text-primary" />
             <h1 className="text-3xl font-bold">Eco-Budgeter</h1>
           </div>
-          <div className="flex gap-2">
-            <Button variant={activeTab === "dashboard" ? "default" : "outline"} onClick={() => setActiveTab("dashboard")}>
-              Dashboard
-            </Button>
-            <Button variant={activeTab === "scanner" ? "default" : "outline"} onClick={() => setActiveTab("scanner")}>
-              Scanner
-            </Button>
+          <div className="flex items-center gap-4">
+            <div className="hidden sm:flex gap-2 mr-4">
+              <Button variant={activeTab === "dashboard" ? "default" : "outline"} onClick={() => setActiveTab("dashboard")}>Dashboard</Button>
+              <Button variant={activeTab === "scanner" ? "default" : "outline"} onClick={() => setActiveTab("scanner")}>Scanner</Button>
+            </div>
+            
+            <div className="relative">
+              <div className="flex items-center gap-3 cursor-pointer" onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}>
+                <div className="text-right hidden md:block">
+                  <p className="text-sm font-bold leading-none">{profile.username || "Set Username"}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">Avg Score: {avgEcoScore}</p>
+                </div>
+                <div className="w-10 h-10 rounded-full border bg-muted overflow-hidden flex items-center justify-center hover:ring-2 hover:ring-primary transition-all">
+                  {profile.avatar_url ? (
+                    <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <User className="w-6 h-6 text-muted-foreground" />
+                  )}
+                </div>
+              </div>
+
+              {isUserMenuOpen && (
+                <div className="absolute top-full right-0 mt-2 w-48 bg-card border rounded-md shadow-lg z-50 py-1 animate-in fade-in zoom-in-95">
+                  <Link href="/settings" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-muted w-full transition-colors">
+                    <Settings className="w-4 h-4" /> Edit Profile
+                  </Link>
+                  <button 
+                    onClick={async () => { await supabase.auth.signOut(); window.location.reload(); }}
+                    className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-destructive/10 text-destructive w-full transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" /> Sign Out
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
         {activeTab === "dashboard" ? (
           <div className="space-y-6 animate-in fade-in">
             {/* Budget Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Net Income</p><p className="text-2xl font-bold">${profile.monthly_income - profile.scheduled_expenses}</p></CardContent></Card>
               <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Total Spent</p><p className="text-2xl font-bold text-red-500">${totalSpent.toFixed(2)}</p></CardContent></Card>
               <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Savings Goal</p><p className="text-2xl font-bold text-blue-500">${profile.saving_goal}</p></CardContent></Card>
               <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Budget Left</p><p className={`text-2xl font-bold ${remainingBudget < 0 ? "text-red-500" : "text-green-500"}`}>${remainingBudget.toFixed(2)}</p></CardContent></Card>
+              <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Budget Progress</p><p className={`text-2xl font-bold ${isBudgetProgressOver ? "text-red-500" : "text-green-500"}`}>{displayBudgetProgress}</p></CardContent></Card>
               <Card className="bg-emerald-50 border-emerald-200"><CardContent className="p-4"><p className="text-sm text-emerald-700 font-medium">Avg Eco-Score</p><p className="text-2xl font-bold text-emerald-900">{avgEcoScore}/100</p></CardContent></Card>
             </div>
 
@@ -350,6 +473,23 @@ export default function Home() {
                           </div>
                         ))}
                       </div>
+
+                      {r.image_urls && r.image_urls.length > 0 && (
+                        <div className="mt-4 pt-4 border-t">
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Attached Photos</p>
+                          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                            {r.image_urls.map((url: string, i: number) => (
+                              <img 
+                                key={i} 
+                                src={url} 
+                                alt={`Attachment ${i + 1}`} 
+                                className="h-24 w-24 object-cover rounded-md border bg-background flex-shrink-0 hover:scale-105 transition-transform cursor-pointer" 
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex gap-2 mt-4">
                         <Button size="sm" variant="outline" onClick={() => { 
                           setEditingId(r.id); 
@@ -363,7 +503,8 @@ export default function Home() {
                             items: r.items || [],
                             color: r.color || "#10b981",
                             payment_method: r.payment_method || "",
-                            created_at: r.created_at
+                            created_at: r.created_at,
+                            image_urls: r.image_urls || []
                           }); 
                           setIsModalOpen(true); 
                         }}>Edit</Button>
@@ -402,6 +543,24 @@ export default function Home() {
                   value={formData.created_at ? new Date(new Date(formData.created_at).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ""} 
                   onChange={e => setFormData({...formData, created_at: new Date(e.target.value).toISOString()})} 
                 />
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between items-center px-1">
+                  <Label className="text-[10px] text-muted-foreground uppercase font-bold">Eco Score</Label>
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      className="h-7 px-2 text-[10px] text-primary font-bold hover:bg-primary/10 flex items-center gap-1"
+                      onClick={analyzeManualExpense}
+                      disabled={loading || (!formData.store_name && !formData.description)}
+                    >
+                      {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <BrainCircuit className="w-3 h-3" />}
+                      AI Score
+                    </Button>
+                    <span className="text-xs font-bold text-emerald-600">{formData.eco_score}</span>
+                  </div>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <input type="color" value={formData.color} onChange={e => setFormData({...formData, color: e.target.value})} className="w-10 h-10 border-0" />
@@ -491,6 +650,33 @@ export default function Home() {
                           </Button>
                         </div>
                       ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 pt-2 border-t">
+                    <Label className="text-primary font-bold">Additional Photos</Label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {formData.image_urls?.map((url: string, idx: number) => (
+                        <div key={idx} className="relative aspect-square rounded-md overflow-hidden border bg-muted">
+                          <img src={url} alt="" className="w-full h-full object-cover" />
+                          <Button 
+                            size="icon" 
+                            variant="destructive" 
+                            className="absolute top-1 right-1 h-5 w-5 rounded-sm"
+                            onClick={() => setFormData({
+                              ...formData, 
+                              image_urls: formData.image_urls.filter((_, i) => i !== idx)
+                            })}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                      <Label className="aspect-square border-2 border-dashed rounded-md flex flex-col items-center justify-center cursor-pointer hover:bg-muted/50 transition-colors">
+                        <Upload className="w-4 h-4 text-muted-foreground mb-1" />
+                        <span className="text-[10px] text-muted-foreground uppercase font-bold">Add</span>
+                        <input type="file" multiple accept="image/*" className="hidden" onChange={handleAdditionalImages} />
+                      </Label>
                     </div>
                   </div>
                 </div>

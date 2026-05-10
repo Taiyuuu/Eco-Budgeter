@@ -1,18 +1,25 @@
-import { google } from "@ai-sdk/google";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import { z } from "zod";
+import { createClient } from "@/lib/supabase/server";
 
 export async function POST(req: Request) {
   console.log("--- STARTING ANALYSIS ---");
   try {
-    const { image } = await req.json();
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+
+    const { data: profile } = await supabase.from("profiles").select("gemini_api_key").eq("id", user.id).single();
+    const apiKey = profile?.gemini_api_key;
+
+    const { image, storeName, totalAmount, description, items: providedItems } = await req.json();
     
-    if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-      console.error("CRITICAL: GOOGLE_GENERATIVE_AI_API_KEY is missing!");
-      return new Response(JSON.stringify({ error: "API Key missing" }), { status: 500 });
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: "Gemini API Key missing. Please add it in Profile Settings." }), { status: 400 });
     }
 
-    // This is the line that usually crashes
+    const google = createGoogleGenerativeAI({ apiKey });
     const result = await generateObject({
       model: google("gemini-3.1-flash-lite-preview"), // or your working version
       schema: z.object({
@@ -35,9 +42,11 @@ export async function POST(req: Request) {
           content: [
             { 
               type: "text", 
-              text: "Analyze this receipt. For each item, extract the name, total price, quantity, and a plasticRating (1-100, where 100 is eco-friendly). Also provide the storeName, totalAmount, a category (e.g. Groceries), isLocalBusiness (boolean), an overall ecoScore (1-100) based on the items, and an ecoTip." 
+              text: image 
+                ? "Analyze this receipt. For each item, extract the name, total price, quantity, and a plasticRating (1-100, where 100 is eco-friendly). Also provide the storeName, totalAmount, a category (e.g. Groceries), isLocalBusiness (boolean), an overall ecoScore (1-100) based on the items, and an ecoTip."
+                : `Analyze this manual expense. Store: ${storeName}, Total: ${totalAmount}, Description: ${description}, Items: ${JSON.stringify(providedItems)}. Calculate an eco-score (1-100), category, and eco-friendly tip based on the environmental impact of these purchases.`
             },
-            { type: "image", image },
+            ...(image ? [{ type: "image" as const, image }] : []),
           ],
         },
       ],
