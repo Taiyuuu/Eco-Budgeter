@@ -1,7 +1,6 @@
 import { google } from "@ai-sdk/google";
 import { generateObject } from "ai";
-import { date, z } from "zod";
-import { da } from "zod/v4/locales";
+import { z } from "zod";
 
 export async function POST(req: Request) {
   console.log("--- STARTING ANALYSIS ---");
@@ -19,6 +18,9 @@ export async function POST(req: Request) {
       schema: z.object({
         storeName: z.string(),
         totalAmount: z.number(),
+        category: z.string(),
+        isLocalBusiness: z.boolean(),
+        ecoScore: z.number(),
         items: z.array(z.object({
           name: z.string(),
           price: z.number(),         // Price for the total amount of this item
@@ -33,7 +35,7 @@ export async function POST(req: Request) {
           content: [
             { 
               type: "text", 
-              text: "Analyze this receipt. For each item, extract the name, total price for that line, and the QUANTITY (how many were bought). If quantity isn't listed, assume 1." 
+              text: "Analyze this receipt. For each item, extract the name, total price, quantity, and a plasticRating (1-100, where 100 is eco-friendly). Also provide the storeName, totalAmount, a category (e.g. Groceries), isLocalBusiness (boolean), an overall ecoScore (1-100) based on the items, and an ecoTip." 
             },
             { type: "image", image },
           ],

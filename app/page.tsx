@@ -36,7 +36,7 @@ export default function Home() {
     store_name: "", total_amount: "", expense_type: "", description: "", 
     eco_score: 50, is_local_business: false, items: [] as any[], color: "#10b981",
     payment_method: "",
-    created_at: new Date().toISOString()
+    created_at: ""
   };
   const [formData, setFormData] = useState(defaultForm);
 
@@ -61,10 +61,28 @@ export default function Home() {
   const totalSpent = history.reduce((sum, r) => sum + (r.total_amount || 0), 0);
   const remainingBudget = profile.monthly_income - profile.scheduled_expenses - profile.saving_goal - totalSpent;
 
-  const pieData = Object.values(history.reduce((acc: any, curr) => {
+  const avgEcoScore = history.length > 0 
+    ? Math.round(history.reduce((sum, r) => sum + (r.eco_score || 0), 0) / history.length) 
+    : 0;
+
+  const expenseTypeData = Object.values(history.reduce((acc: any, curr) => {
     const type = curr.expense_type || "Uncategorized";
     if (!acc[type]) acc[type] = { name: type, value: 0, color: curr.color || "#10b981" };
     acc[type].value += curr.total_amount;
+    return acc;
+  }, {}));
+
+  const paymentMethodData = Object.values(history.reduce((acc: any, curr) => {
+    const method = curr.payment_method || "Unspecified";
+    if (!acc[method]) acc[method] = { name: method, value: 0 };
+    acc[method].value += curr.total_amount;
+    return acc;
+  }, {}));
+
+  const colorTagData = Object.values(history.reduce((acc: any, curr) => {
+    const color = curr.color || "#10b981";
+    if (!acc[color]) acc[color] = { name: "Tag Group", value: 0, color: color };
+    acc[color].value += curr.total_amount;
     return acc;
   }, {}));
 
@@ -156,33 +174,79 @@ export default function Home() {
         {activeTab === "dashboard" ? (
           <div className="space-y-6 animate-in fade-in">
             {/* Budget Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Income</p><p className="text-2xl font-bold">${profile.monthly_income}</p></CardContent></Card>
-              <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Expenses</p><p className="text-2xl font-bold text-red-500">-${profile.scheduled_expenses}</p></CardContent></Card>
-              <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Goal</p><p className="text-2xl font-bold text-blue-500">${profile.saving_goal}</p></CardContent></Card>
-              <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Left</p><p className={`text-2xl font-bold ${remainingBudget < 0 ? "text-red-500" : "text-green-500"}`}>${remainingBudget.toFixed(2)}</p></CardContent></Card>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Net Income</p><p className="text-2xl font-bold">${profile.monthly_income - profile.scheduled_expenses}</p></CardContent></Card>
+              <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Total Spent</p><p className="text-2xl font-bold text-red-500">${totalSpent.toFixed(2)}</p></CardContent></Card>
+              <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Savings Goal</p><p className="text-2xl font-bold text-blue-500">${profile.saving_goal}</p></CardContent></Card>
+              <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Budget Left</p><p className={`text-2xl font-bold ${remainingBudget < 0 ? "text-red-500" : "text-green-500"}`}>${remainingBudget.toFixed(2)}</p></CardContent></Card>
+              <Card className="bg-emerald-50 border-emerald-200"><CardContent className="p-4"><p className="text-sm text-emerald-700 font-medium">Avg Eco-Score</p><p className="text-2xl font-bold text-emerald-900">{avgEcoScore}/100</p></CardContent></Card>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid md:grid-cols-3 gap-6">
               <Card>
-                <CardHeader><CardTitle>Spending by Category</CardTitle></CardHeader>
-                <CardContent className="h-64">
-                  {pieData.length > 0 ? (
+                <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">By Category</CardTitle></CardHeader>
+                <CardContent className="h-48">
+                  {expenseTypeData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} dataKey="value">
-                          {pieData.map((entry: any, index) => <Cell key={index} fill={entry.color} />)}
+                        <Pie data={expenseTypeData} cx="50%" cy="50%" innerRadius={40} outerRadius={60} dataKey="value">
+                          {expenseTypeData.map((entry: any, index) => <Cell key={index} fill={entry.color} />)}
                         </Pie>
                         <RechartsTooltip />
                       </PieChart>
                     </ResponsiveContainer>
                   ) : (
                     <div className="flex items-center justify-center h-full text-muted-foreground">
-                      No spending data yet.
+                      No data yet.
                     </div>
                   )}
                 </CardContent>
               </Card>
+
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">By Payment Method</CardTitle></CardHeader>
+                <CardContent className="h-48">
+                  {paymentMethodData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={paymentMethodData} cx="50%" cy="50%" innerRadius={40} outerRadius={60} dataKey="value">
+                          {paymentMethodData.map((entry: any, index) => (
+                            <Cell key={index} fill={["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f59e0b"][index % 5]} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
+                      No data yet.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">By Color Tags</CardTitle></CardHeader>
+                <CardContent className="h-48">
+                  {colorTagData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={colorTagData} cx="50%" cy="50%" innerRadius={40} outerRadius={60} dataKey="value">
+                          {colorTagData.map((entry: any, index) => <Cell key={index} fill={entry.color} />)}
+                        </Pie>
+                        <RechartsTooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
+                      No data yet.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid md:grid-cols-1">
               <Card className="bg-primary text-primary-foreground flex flex-col justify-center p-6">
                  <Settings2 className="w-8 h-8 mb-4" />
                  <h3 className="text-xl font-bold mb-2">Budget Settings</h3>
@@ -217,6 +281,7 @@ export default function Home() {
                   <div className="grid gap-2">
                     <p><span className="font-semibold">Store:</span> {data.storeName}</p>
                     <p><span className="font-semibold">Total:</span> ${data.totalAmount?.toFixed(2)}</p>
+                    <p><span className="font-semibold">Eco Score:</span> {data.ecoScore}/100</p>
                     <p><span className="font-semibold">Eco tip:</span> {data.ecoTip}</p>
                   </div>
                   {data.items?.length > 0 && (
@@ -239,8 +304,19 @@ export default function Home() {
 
             {/* History List */}
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-bold">History</h2>
-              <Button onClick={() => { setEditingId(null); setFormData(defaultForm); setIsModalOpen(true); }}>
+              <div className="flex items-center gap-4">
+                <h2 className="text-2xl font-bold">History</h2>
+                {history.length > 0 && (
+                  <div className="hidden sm:flex px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold items-center gap-1 border border-emerald-200">
+                    <Leaf className="w-3 h-3" /> {avgEcoScore} Avg Score
+                  </div>
+                )}
+              </div>
+              <Button onClick={() => { 
+                setEditingId(null); 
+                setFormData({ ...defaultForm, created_at: new Date().toISOString() }); 
+                setIsModalOpen(true); 
+              }}>
                 <Plus className="w-4 h-4 mr-2" /> Manual Entry
               </Button>
             </div>
