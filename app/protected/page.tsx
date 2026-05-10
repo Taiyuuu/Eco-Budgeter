@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { InfoIcon } from "lucide-react";
 import { FetchDataSteps } from "@/components/tutorial/fetch-data-steps";
 import { Suspense } from "react";
+import RedirectTimer from "@/components/RedirectTimer";
 
 async function UserDetails() {
   const supabase = await createClient();
@@ -19,6 +20,7 @@ async function UserDetails() {
 export default function ProtectedPage() {
   return (
     <div className="flex-1 w-full flex flex-col gap-12">
+      <RedirectTimer />
       <div className="w-full">
         <div className="bg-accent text-sm p-3 px-5 rounded-md text-foreground flex gap-3 items-center">
           <InfoIcon size="16" strokeWidth={2} />

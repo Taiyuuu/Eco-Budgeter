@@ -1,18 +1,11 @@
-@font-face {
-  font-family: "Custom Font";
-  src: url("/font.woff") format("woff");
-  font-display: swap;
-  font-weight: bold;
-}
-
 @import "tailwindcss/index.css";
 @import "tw-animate-css";
 
 @plugin "tailwindcss-animate";
 
 @theme inline {
-  --font-heading: var(--font-sans);
-  --font-sans: var(--font-sans);
+  --font-heading: var(--font-custom);
+  --font-sans: var(--font-custom);
   
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -90,11 +83,12 @@
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    cursor: none !important;
   }
   html, body {
     @apply bg-background text-foreground;
-    font-family: "Custom Font", system-ui, -apple-system, sans-serif !important;
-    font-weight: 900 !important;
+    font-family: var(--font-custom), ui-sans-serif, system-ui, sans-serif;
+    font-weight: 900;
     letter-spacing: 0.3px;
     -webkit-text-stroke: 0.8px currentColor;
   }

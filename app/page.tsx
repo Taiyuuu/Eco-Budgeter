@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
+import { useTheme } from "next-themes";
 import Link from "next/link";
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, 
@@ -45,6 +46,7 @@ const AnimatedNumber = ({ value, prefix = "", suffix = "", decimals = 2 }: { val
 
 export default function Home() {
   const supabase = createClient();
+  const { setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<"dashboard" | "scanner">("scanner");
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -90,6 +92,7 @@ export default function Home() {
     const handleMouseMove = (e: MouseEvent) => {
       mousePos.current = { x: e.clientX, y: e.clientY };
     };
+
     window.addEventListener("mousemove", handleMouseMove);
 
     let frameId: number;
@@ -103,6 +106,7 @@ export default function Home() {
         // Center the blob on the cursor
         blobRef.current.style.transform = `translate(${blobPos.current.x - 250}px, ${blobPos.current.y - 250}px)`;
       }
+
       frameId = requestAnimationFrame(animate);
     };
     animate();
@@ -124,6 +128,12 @@ export default function Home() {
     const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single();
     if (data) {
       setProfile(data);
+      
+      // Sync theme preference with next-themes on mount
+      if (data.theme && data.theme !== "custom") {
+        setTheme(data.theme);
+      }
+
       if (data.last_analysis_text) setAiAdvice(JSON.parse(data.last_analysis_text));
       
       // Automatically request analysis every day
@@ -138,21 +148,11 @@ export default function Home() {
   useEffect(() => {
     if (!mounted) return;
     
-    const applyTheme = (theme: string) => {
-      const root = document.documentElement;
-      root.classList.remove("light", "dark");
-      
-      if (theme === "system") {
-        const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-        root.classList.add(systemTheme);
-      } else if (theme === "light" || theme === "dark") {
-        root.classList.add(theme);
-      } else if (theme === "custom") {
-        root.classList.add(theme);
-      }
-    };
-
-    applyTheme(profile.theme || "system");
+    // Only manage the 'custom' class manually. 
+    // next-themes handles light/dark/system automatically via RootLayout.
+    const root = document.documentElement;
+    if (profile.theme === "custom") root.classList.add("custom");
+    else root.classList.remove("custom");
   }, [profile.theme, mounted]);
 
   // --- Financial Calculations ---
@@ -279,7 +279,6 @@ export default function Home() {
           console.error("API Response error:", result);
           return;
         }
-        console.log("API Response result:", result);
         setData(result);
 
         // Save the scanned results to Supabase history
@@ -370,11 +369,9 @@ export default function Home() {
           const updated = { 
             ...prev, 
             eco_score: result.ecoScore,
-            is_local_business: result.isLocalBusiness ?? prev.is_local_business,
             expense_type: result.category || prev.expense_type,
             description: result.ecoTip ? (prev.description ? `${prev.description}\n\nTip: ${result.ecoTip}` : result.ecoTip) : prev.description
           };
-          console.log("Updated formData:", updated);
           return updated;
         });
       } else {
