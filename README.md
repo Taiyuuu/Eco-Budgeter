@@ -1,10 +1,10 @@
-<a href="https://demo-nextjs-with-supabase.vercel.app/">
-  <img alt="Next.js and Supabase Starter Kit - the fastest way to build apps with Next.js and Supabase" src="https://demo-nextjs-with-supabase.vercel.app/opengraph-image.png">
-  <h1 align="center">Next.js and Supabase Starter Kit</h1>
+<a href="#">
+  <h1 align="center">🌿 Eco-Budgeter</h1>
 </a>
 
 <p align="center">
  The fastest way to build apps with Next.js and Supabase
+ An AI-powered personal finance tracker that combines smart budgeting with environmental impact analysis.
 </p>
 
 <p align="center">
@@ -14,6 +14,8 @@
   <a href="#clone-and-run-locally"><strong>Clone and run locally</strong></a> ·
   <a href="#feedback-and-issues"><strong>Feedback and issues</strong></a>
   <a href="#more-supabase-examples"><strong>More Examples</strong></a>
+  <a href="#tech-stack"><strong>Tech Stack</strong></a> ·
+  <a href="#setup"><strong>Setup</strong></a>
 </p>
 <br/>
 
@@ -32,8 +34,20 @@
 - Components with [shadcn/ui](https://ui.shadcn.com/)
 - Optional deployment with [Supabase Vercel Integration and Vercel deploy](#deploy-your-own)
   - Environment variables automatically assigned to Vercel project
+- **AI Receipt Scanning**: Instantly extract items, prices, and store names from receipts using Google Gemini AI.
+- **Eco-Scoring**: Automatically analyze the environmental impact of your purchases with sustainable shopping tips.
+- **Smart Dashboard**:
+    - **Spending vs. Budget**: Real-time line charts comparing actual spending against a linear "Ideal Budget".
+    - **Daily AI Insights**: Receive automated daily analysis of spending patterns and financial advice.
+    - **Budget Progress**: Real-time tracking of net income, savings goals, and proportional budget usage.
+- **Interactive UI**:
+    - **Fluid Background**: A smooth, interactive shape follows the cursor for a modern aesthetic.
+    - **Themes**: Support for System, Light, Dark, and Custom Gradient backgrounds.
+    - **Micro-interactions**: Animated number counters and smooth layout transitions.
+- **Secure Profile**: Encrypted storage of personal Gemini API keys and profile settings in Supabase.
 
 ## Demo
+## Tech Stack
 
 You can view a fully working demo at [demo-nextjs-with-supabase.vercel.app](https://demo-nextjs-with-supabase.vercel.app/).
 
@@ -48,6 +62,12 @@ After installation of the Supabase integration, all relevant environment variabl
 The above will also clone the Starter kit to your GitHub, you can clone that locally and develop locally.
 
 If you wish to just develop locally and not deploy to Vercel, [follow the steps below](#clone-and-run-locally).
+- **Framework**: Next.js 15 (App Router)
+- **Backend/Auth**: Supabase (PostgreSQL, Storage, Auth)
+- **AI**: Google Gemini Pro (via Vercel AI SDK)
+- **Styling**: Tailwind CSS + Shadcn UI
+- **Visualization**: Recharts
+- **Animations**: Framer Motion / CSS Transitions
 
 ## Clone and run locally
 
@@ -74,36 +94,29 @@ If you wish to just develop locally and not deploy to Vercel, [follow the steps 
    ```
 
 4. Rename `.env.example` to `.env.local` and update the following:
-
+1. Clone the repository and install dependencies:
+   ```bash
+   npm install
+   ```
+2. Update your `.env.local` with Supabase credentials:
   ```env
   NEXT_PUBLIC_SUPABASE_URL=[INSERT SUPABASE PROJECT URL]
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=[INSERT SUPABASE PROJECT API PUBLISHABLE OR ANON KEY]
-  ```
-  > [!NOTE]
-  > This example uses `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, which refers to Supabase's new **publishable** key format.
-  > Both legacy **anon** keys and new **publishable** keys can be used with this variable name during the transition period. Supabase's dashboard may show `NEXT_PUBLIC_SUPABASE_ANON_KEY`; its value can be used in this example.
-  > See the [full announcement](https://github.com/orgs/supabase/discussions/29260) for more information.
+[!NOTE]
 
-  Both `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` can be found in [your Supabase project's API settings](https://supabase.com/dashboard/project/_?showConnect=true)
+This example uses NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, which refers to Supabase's new publishable key format.
 
-5. You can now run the Next.js local development server:
+Both legacy anon keys and new publishable keys can be used with this variable name during the transition period. Supabase's dashboard may show NEXT_PUBLIC_SUPABASE_ANON_KEY; its value can be used in this example.
 
-   ```bash
-   npm run dev
-   ```
+See the full announcement for more information.
 
-   The starter kit should now be running on [localhost:3000](http://localhost:3000/).
-
-6. This template comes with the default shadcn/ui style initialized. If you instead want other ui.shadcn styles, delete `components.json` and [re-install shadcn/ui](https://ui.shadcn.com/docs/installation/next)
-
-> Check out [the docs for Local Development](https://supabase.com/docs/guides/getting-started/local-development) to also run Supabase locally.
-
-## Feedback and issues
-
-Please file feedback and issues over on the [Supabase GitHub org](https://github.com/supabase/supabase/issues/new/choose).
-
-## More Supabase examples
-
-- [Next.js Subscription Payments Starter](https://github.com/vercel/nextjs-subscription-payments)
-- [Cookie-based Auth and the Next.js 13 App Router (free course)](https://youtube.com/playlist?list=PL5S4mPUpp4OtMhpnp93EFSo42iQ40XjbF)
-- [Supabase Auth and the Next.js App Router](https://github.com/supabase/supabase/tree/master/examples/auth/nextjs)
+Both NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY can be found in your Supabase project's API settings
+-5. You can now run the Next.js local development server:
++3. Start the development server: bash npm run dev
+The starter kit should now be running on localhost:3000.
+-6. This template comes with the default shadcn/ui style initialized. If you instead want other ui.shadcn styles, delete components.json and re-install shadcn/ui
+-> Check out the docs for Local Development to also run Supabase locally.
+-## Feedback and issues
+-Please file feedback and issues over on the Supabase GitHub org.
+-## More Supabase examples
+-- Next.js Subscription Payments Starter -- Cookie-based Auth and the Next.js 13 App Router (free course) -- Supabase Auth and the Next.js App Router +4. AI Key Configuration: Once signed in, go to the Settings page and enter your Google Gemini API key to enable scanning and analysis features.

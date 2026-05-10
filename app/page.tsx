@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
   Upload, Leaf, MapPin, Receipt, Loader2, History, Plus, Edit2, 
   Trash2, X, ChevronDown, ChevronUp, Save, BarChart3, Settings2, 
@@ -19,6 +19,30 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Legend 
 } from "recharts";
 
+const AnimatedNumber = ({ value, prefix = "", suffix = "", decimals = 2 }: { value: number, prefix?: string, suffix?: string, decimals?: number }) => {
+  const [displayValue, setDisplayValue] = useState(value);
+
+  useEffect(() => {
+    let start = displayValue;
+    const end = value;
+    if (start === end) return;
+
+    const duration = 800;
+    let startTime: number | null = null;
+
+    const animate = (now: number) => {
+      if (!startTime) startTime = now;
+      const progress = Math.min((now - startTime) / duration, 1);
+      const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+      setDisplayValue(start + (end - start) * easeOutQuart);
+      if (progress < 1) requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
+  }, [value]);
+
+  return <span>{prefix}{displayValue.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}{suffix}</span>;
+};
+
 export default function Home() {
   const supabase = createClient();
   const [activeTab, setActiveTab] = useState<"dashboard" | "scanner">("scanner");
@@ -33,6 +57,11 @@ export default function Home() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [aiAdvice, setAiAdvice] = useState<any>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+
+  // Cursor Following Fluid Shape Refs
+  const blobRef = useRef<HTMLDivElement>(null);
+  const mousePos = useRef({ x: 0, y: 0 });
+  const blobPos = useRef({ x: 0, y: 0 });
 
   // Modal & Form States
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -54,6 +83,35 @@ export default function Home() {
     fetchHistory(); 
     fetchProfile();
   }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      mousePos.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+
+    let frameId: number;
+    const animate = () => {
+      // Smooth interpolation (lerp)
+      const easing = 0.06; // Adjust for smoothness (lower = slower/smoother)
+      blobPos.current.x += (mousePos.current.x - blobPos.current.x) * easing;
+      blobPos.current.y += (mousePos.current.y - blobPos.current.y) * easing;
+
+      if (blobRef.current) {
+        // Center the blob on the cursor
+        blobRef.current.style.transform = `translate(${blobPos.current.x - 250}px, ${blobPos.current.y - 250}px)`;
+      }
+      frameId = requestAnimationFrame(animate);
+    };
+    animate();
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      cancelAnimationFrame(frameId);
+    };
+  }, [mounted]);
 
   const fetchHistory = async () => {
     const { data } = await supabase.from("receipts").select("*").order("created_at", { ascending: false });
@@ -87,7 +145,9 @@ export default function Home() {
       if (theme === "system") {
         const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         root.classList.add(systemTheme);
-      } else {
+      } else if (theme === "light" || theme === "dark") {
+        root.classList.add(theme);
+      } else if (theme === "custom") {
         root.classList.add(theme);
       }
     };
@@ -358,14 +418,24 @@ export default function Home() {
 
   return (
     <main 
-      className="min-h-screen p-4 md:p-8 pb-24 transition-all duration-500 bg-background"
+      className="relative min-h-screen p-4 md:p-8 pb-24 transition-all duration-500 bg-background overflow-hidden"
       style={{ 
-        background: profile.gradient_start && profile.gradient_end 
+        background: profile.theme === "custom" && profile.gradient_start && profile.gradient_end 
           ? `linear-gradient(to bottom right, ${profile.gradient_start}, ${profile.gradient_end})`
           : undefined 
       }}
     >
-      <div className="max-w-5xl mx-auto space-y-6">
+      {/* Interactive Fluid Shape */}
+      <div 
+        ref={blobRef}
+        className="fixed top-0 left-0 w-[500px] h-[500px] bg-white/20 rounded-full blur-[100px] pointer-events-none z-0 mix-blend-soft-light will-change-transform"
+        style={{ 
+          opacity: mounted ? 1 : 0,
+          transition: 'opacity 1s ease'
+        }}
+      />
+
+      <div className="relative z-10 max-w-5xl mx-auto space-y-6">
         <header className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-3">
             <Leaf className="w-8 h-8 text-primary" />
@@ -410,18 +480,29 @@ export default function Home() {
         </header>
 
         {activeTab === "dashboard" ? (
-          <div className="space-y-6 animate-in fade-in">
+          <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
             {/* Budget Stats */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Net Income</p><p className="text-2xl font-bold">${profile.monthly_income - profile.scheduled_expenses}</p></CardContent></Card>
-              <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Total Spent</p><p className="text-2xl font-bold text-red-500">${totalSpent.toFixed(2)}</p></CardContent></Card>
-              <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Savings Goal</p><p className="text-2xl font-bold text-blue-500">${profile.saving_goal}</p></CardContent></Card>
-              <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Budget Left</p><p className={`text-2xl font-bold ${remainingBudget < 0 ? "text-red-500" : "text-green-500"}`}>${remainingBudget.toFixed(2)}</p></CardContent></Card>
-              <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Budget Progress</p><p className={`text-2xl font-bold ${isBudgetProgressOver ? "text-red-500" : "text-green-500"}`}>{displayBudgetProgress}</p></CardContent></Card>
-              <Card className="bg-emerald-50 border-emerald-200"><CardContent className="p-4"><p className="text-sm text-emerald-700 font-medium">Avg Eco-Score</p><p className="text-2xl font-bold text-emerald-900">{avgEcoScore}/100</p></CardContent></Card>
+              {[
+                { label: "Net Income", val: profile.monthly_income - profile.scheduled_expenses, prefix: "$" },
+                { label: "Total Spent", val: totalSpent, prefix: "$", color: "text-red-500" },
+                { label: "Savings Goal", val: profile.saving_goal, prefix: "$", color: "text-blue-500" },
+                { label: "Budget Left", val: remainingBudget, prefix: "$", color: remainingBudget < 0 ? "text-red-500" : "text-green-500" },
+                { label: "Budget Progress", val: typeof budgetProgressPercentage === 'number' ? budgetProgressPercentage : 0, suffix: "%", color: isBudgetProgressOver ? "text-red-500" : "text-green-500", decimals: 0 },
+                { label: "Avg Eco-Score", val: avgEcoScore, suffix: "/100", color: "text-emerald-900", decimals: 0, bg: "bg-emerald-50 border-emerald-200" }
+              ].map((stat, i) => (
+                <Card key={i} className={`hover:scale-105 hover:shadow-lg hover:border-primary/30 transition-all duration-300 cursor-default ${stat.bg || ""}`}>
+                  <CardContent className="p-4">
+                    <p className="text-sm text-muted-foreground">{stat.label}</p>
+                    <p className={`text-2xl font-bold ${stat.color || ""}`}>
+                      <AnimatedNumber value={stat.val} prefix={stat.prefix} suffix={stat.suffix} decimals={stat.decimals} />
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
 
-            <Card className="p-6">
+            <Card className="p-6 hover:shadow-md transition-shadow duration-300">
               <div className="flex justify-between items-center mb-6">
                 <CardTitle className="flex items-center gap-2"><TrendingUp className="w-5 h-5" /> Spending vs. Budget Timeline</CardTitle>
               </div>
@@ -456,7 +537,7 @@ export default function Home() {
             </Card>
 
             <div className="grid md:grid-cols-3 gap-6">
-              <Card className="md:col-span-2">
+              <Card className="md:col-span-2 hover:shadow-md transition-shadow duration-300">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle className="text-lg flex items-center gap-2">
                     <Lightbulb className="w-5 h-5 text-amber-500" /> AI Insights & Advice
@@ -557,7 +638,7 @@ export default function Home() {
             </div>
 
             <div className="grid md:grid-cols-1">
-              <Card className="bg-primary text-primary-foreground flex flex-col justify-center p-6">
+              <Card className="bg-primary text-primary-foreground flex flex-col justify-center p-6 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
                  <Settings2 className="w-8 h-8 mb-4" />
                  <h3 className="text-xl font-bold mb-2">Budget Settings</h3>
                  <p className="text-sm opacity-80 mb-4">Adjust your income and saving goals to keep your budget accurate.</p>
@@ -566,7 +647,7 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          <div className="space-y-6 animate-in fade-in">
+          <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-500">
             {/* Scanner Upload Section */}
             <Card className="border-dashed border-2 bg-muted/50 py-10 flex flex-col items-center">
               <input type="file" id="up" className="hidden" onChange={handleUpload} />
@@ -633,11 +714,11 @@ export default function Home() {
 
             <div className="space-y-3">
               {history.map((r) => (
-                <Card key={r.id} className="overflow-hidden" style={{ borderLeft: `6px solid ${r.color}` }}>
+                <Card key={r.id} className="overflow-hidden hover:border-primary/40 transition-colors duration-200" style={{ borderLeft: `6px solid ${r.color}` }}>
                   <div className="p-4 flex justify-between items-center cursor-pointer" onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}>
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center font-bold">{r.eco_score}</div>
-                      <div>
+                      <div className="transition-transform duration-200 group-hover:translate-x-1">
                         <p className="font-bold">{r.store_name}</p>
                         <div className="flex items-center gap-2">
                           <p className="text-xs text-muted-foreground">{r.expense_type || "No category"}</p>
@@ -650,7 +731,8 @@ export default function Home() {
                     </div>
                     <p className="font-mono font-bold">${r.total_amount?.toFixed(2)}</p>
                   </div>
-                  {expandedId === r.id && (
+                  <div className={`grid transition-all duration-300 ease-in-out ${expandedId === r.id ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                    <div className="overflow-hidden">
                     <CardContent className="border-t p-4 bg-muted/20">
                       <div className="space-y-2">
                         {getAggregatedItems(r.items).map((item: any, i) => (
@@ -703,7 +785,8 @@ export default function Home() {
                         }}>Delete</Button>
                       </div>
                     </CardContent>
-                  )}
+                    </div>
+                  </div>
                 </Card>
               ))}
             </div>

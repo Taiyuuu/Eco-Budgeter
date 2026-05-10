@@ -96,6 +96,6 @@
     font-family: "Custom Font", system-ui, -apple-system, sans-serif !important;
     font-weight: 900 !important;
     letter-spacing: 0.3px;
-    -webkit-text-stroke: 0.5px currentColor;
+    -webkit-text-stroke: 0.8px currentColor;
   }
 }
