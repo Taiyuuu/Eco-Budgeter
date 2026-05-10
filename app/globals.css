@@ -1,3 +1,10 @@
+@font-face {
+  font-family: "Custom Font";
+  src: url("/font.woff") format("woff");
+  font-display: swap;
+  font-weight: bold;
+}
+
 @import "tailwindcss/index.css";
 @import "tw-animate-css";
 
@@ -80,8 +87,15 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-  body {
+  html, body {
     @apply bg-background text-foreground;
+    font-family: "Custom Font", system-ui, -apple-system, sans-serif !important;
+    font-weight: 900 !important;
+    letter-spacing: 0.3px;
+    -webkit-text-stroke: 0.5px currentColor;
   }
 }

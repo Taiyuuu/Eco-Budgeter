@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { 
   Upload, Leaf, MapPin, Receipt, Loader2, History, Plus, Edit2, 
   Trash2, X, ChevronDown, ChevronUp, Save, BarChart3, Settings2, 
-  PieChart as PieChartIcon, BrainCircuit, User, LogOut, Settings
+  PieChart as PieChartIcon, BrainCircuit, User, LogOut, Settings,
+  TrendingUp, Lightbulb, LineChart as LineChartIcon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +14,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
+import { 
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Legend 
+} from "recharts";
 
 export default function Home() {
   const supabase = createClient();
@@ -24,9 +28,10 @@ export default function Home() {
   
   // Data States
   const [history, setHistory] = useState<any[]>([]);
-  const [profile, setProfile] = useState({ monthly_income: 0, saving_goal: 0, scheduled_expenses: 0, username: "", avatar_url: "" });
+  const [profile, setProfile] = useState({ monthly_income: 0, saving_goal: 0, scheduled_expenses: 0, username: "", avatar_url: "", last_analysis_date: "", last_analysis_text: "", theme: "system", gradient_start: "", gradient_end: "" });
   const [data, setData] = useState<any>(null); // Last scan result
   const [scanError, setScanError] = useState<string | null>(null);
+  const [aiAdvice, setAiAdvice] = useState<any>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   // Modal & Form States
@@ -59,8 +64,36 @@ export default function Home() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single();
-    if (data) setProfile(data);
+    if (data) {
+      setProfile(data);
+      if (data.last_analysis_text) setAiAdvice(JSON.parse(data.last_analysis_text));
+      
+      // Automatically request analysis every day
+      const lastDate = data.last_analysis_date ? new Date(data.last_analysis_date).toDateString() : "";
+      if (lastDate !== new Date().toDateString()) {
+        requestAiAdvice(data);
+      }
+    }
   };
+
+  // --- Appearance & Theme Handling ---
+  useEffect(() => {
+    if (!mounted) return;
+    
+    const applyTheme = (theme: string) => {
+      const root = document.documentElement;
+      root.classList.remove("light", "dark");
+      
+      if (theme === "system") {
+        const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        root.classList.add(systemTheme);
+      } else {
+        root.classList.add(theme);
+      }
+    };
+
+    applyTheme(profile.theme || "system");
+  }, [profile.theme, mounted]);
 
   // --- Financial Calculations ---
   const totalSpent = history.reduce((sum, r) => sum + (r.total_amount || 0), 0);
@@ -94,6 +127,35 @@ export default function Home() {
     displayBudgetProgress = typeof budgetProgressPercentage === 'number' ? `${budgetProgressPercentage.toFixed(0)}%` : budgetProgressPercentage;
     isBudgetProgressOver = typeof budgetProgressPercentage === 'number' ? budgetProgressPercentage > 100 : budgetProgressPercentage === "Over Budget";
   }
+
+  // Prepare Line Chart Data (Expenses vs Proportional Budget)
+  const getLineChartData = () => {
+    if (!mounted) return [];
+    const now = new Date();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const monthlyNetIncome = profile.monthly_income - profile.scheduled_expenses;
+    const dailyBudget = monthlyNetIncome / daysInMonth;
+    
+    const data = [];
+    let cumulativeSpent = 0;
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dayStr = day.toString().padStart(2, '0');
+      const dayExpenses = history.filter(r => {
+        const d = new Date(r.created_at);
+        return d.getDate() === day && d.getMonth() === now.getMonth();
+      });
+      
+      cumulativeSpent += dayExpenses.reduce((sum, r) => sum + (r.total_amount || 0), 0);
+      
+      data.push({
+        day: dayStr,
+        spent: cumulativeSpent,
+        budget: dailyBudget * day
+      });
+    }
+    return data;
+  };
 
   const avgEcoScore = history.length > 0 
     ? Math.round(history.reduce((sum, r) => sum + (r.eco_score || 0), 0) / history.length) 
@@ -171,7 +233,7 @@ export default function Home() {
             is_local_business: result.isLocalBusiness || false,
             description: result.ecoTip || "",
             items: result.items || [],
-            eco_score: result.ecoScore || 50,
+            eco_score: result.ecoScore ?? 50,
             color: "#10b981", // Default color for scanned entries
           });
           if (saveError) console.error("Error saving scan to history:", saveError);
@@ -217,38 +279,92 @@ export default function Home() {
     }
   };
 
-  const analyzeManualExpense = async () => {
-    if (!formData.store_name && !formData.description) return;
+  const analyzeManualExpense = async (e?: React.MouseEvent) => {
+    console.log("AI Score button clicked", { formData });
+    if (e) e.preventDefault();
+    if (!formData.store_name && !formData.description) {
+      console.log("Missing store_name and description, aborting");
+      return;
+    }
+    setLoading(true);
+    try {
+      const payload = { 
+        storeName: formData.store_name,
+        totalAmount: parseFloat(formData.total_amount as string) || 0,
+        description: formData.description,
+        items: formData.items
+      };
+      console.log("Sending to /public/analyze:", payload);
+      
+      const res = await fetch("/public/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await res.json();
+      console.log("AI Analysis response:", result, "Status:", res.status);
+      
+      if (res.ok && result.ecoScore !== undefined) {
+        console.log("Successfully got ecoScore:", result.ecoScore);
+        setFormData(prev => {
+          const updated = { 
+            ...prev, 
+            eco_score: result.ecoScore,
+            is_local_business: result.isLocalBusiness ?? prev.is_local_business,
+            expense_type: result.category || prev.expense_type,
+            description: result.ecoTip ? (prev.description ? `${prev.description}\n\nTip: ${result.ecoTip}` : result.ecoTip) : prev.description
+          };
+          console.log("Updated formData:", updated);
+          return updated;
+        });
+      } else {
+        console.error("AI Analysis failed or missing ecoScore:", result);
+        alert(`Error: ${result.error || "Failed to generate eco-score"}`);
+      }
+    } catch (err) {
+      console.error("AI Analysis failed:", err);
+      alert("Error analyzing expense");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const requestAiAdvice = async (p = profile) => {
     setLoading(true);
     try {
       const res = await fetch("/public/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          storeName: formData.store_name,
-          totalAmount: parseFloat(formData.total_amount as string) || 0,
-          description: formData.description,
-          items: formData.items
+          type: "spending_summary",
+          history: history.slice(0, 20), // Top 20 for context
+          budgetInfo: { 
+            income: p.monthly_income, 
+            expenses: p.scheduled_expenses, 
+            goal: p.saving_goal 
+          }
         }),
       });
       const result = await res.json();
       if (res.ok) {
-        setFormData(prev => ({ 
-          ...prev, 
-          eco_score: result.ecoScore || prev.eco_score,
-          expense_type: result.category || prev.expense_type,
-          description: result.ecoTip ? (prev.description ? `${prev.description}\n\nTip: ${result.ecoTip}` : result.ecoTip) : prev.description
-        }));
+        setAiAdvice(result);
       }
     } catch (err) {
-      console.error("AI Analysis failed:", err);
+      console.error("Advice request failed:", err);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-background p-4 md:p-8 pb-24">
+    <main 
+      className="min-h-screen p-4 md:p-8 pb-24 transition-all duration-500 bg-background"
+      style={{ 
+        background: profile.gradient_start && profile.gradient_end 
+          ? `linear-gradient(to bottom right, ${profile.gradient_start}, ${profile.gradient_end})`
+          : undefined 
+      }}
+    >
       <div className="max-w-5xl mx-auto space-y-6">
         <header className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-3">
@@ -305,7 +421,78 @@ export default function Home() {
               <Card className="bg-emerald-50 border-emerald-200"><CardContent className="p-4"><p className="text-sm text-emerald-700 font-medium">Avg Eco-Score</p><p className="text-2xl font-bold text-emerald-900">{avgEcoScore}/100</p></CardContent></Card>
             </div>
 
+            <Card className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <CardTitle className="flex items-center gap-2"><TrendingUp className="w-5 h-5" /> Spending vs. Budget Timeline</CardTitle>
+              </div>
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={getLineChartData()}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                    <XAxis dataKey="day" fontSize={12} tickMargin={10} />
+                    <YAxis fontSize={12} tickFormatter={(val) => `$${val}`} />
+                    <RechartsTooltip />
+                    <Legend />
+                    <Line 
+                      type="monotone" 
+                      dataKey="spent" 
+                      name="Total Spent" 
+                      stroke="#ef4444" 
+                      strokeWidth={3} 
+                      dot={false} 
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="budget" 
+                      name="Ideal Budget" 
+                      stroke="#10b981" 
+                      strokeWidth={2} 
+                      strokeDasharray="5 5" 
+                      dot={false} 
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+
             <div className="grid md:grid-cols-3 gap-6">
+              <Card className="md:col-span-2">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Lightbulb className="w-5 h-5 text-amber-500" /> AI Insights & Advice
+                  </CardTitle>
+                  <Button variant="ghost" size="sm" onClick={() => requestAiAdvice()} disabled={loading}>
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Refresh"}
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  {aiAdvice ? (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+                      <div className="text-center">
+                        <p className="text-xs font-bold text-primary uppercase mb-1">Financial Status</p>
+                        <p className="text-2xl font-bold text-primary">{aiAdvice.status}</p>
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{aiAdvice.summary}</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {aiAdvice.recommendations?.map((rec: string, i: number) => (
+                          <div key={i} className="p-3 rounded-lg bg-muted/50 text-xs border-l-4 border-primary">
+                            {rec}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="p-3 bg-primary/5 rounded-md border border-primary/20">
+                        <p className="text-xs font-bold text-primary uppercase">Estimated Savings Potential</p>
+                        <p className="text-lg font-bold">{aiAdvice.savingPotential}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-10 text-center text-muted-foreground text-sm">
+                      Click refresh to generate your daily financial insight.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">By Category</CardTitle></CardHeader>
                 <CardContent className="h-48">
@@ -549,10 +736,11 @@ export default function Home() {
                   <Label className="text-[10px] text-muted-foreground uppercase font-bold">Eco Score</Label>
                   <div className="flex items-center gap-2">
                     <Button 
+                      type="button"
                       size="sm" 
                       variant="ghost" 
                       className="h-7 px-2 text-[10px] text-primary font-bold hover:bg-primary/10 flex items-center gap-1"
-                      onClick={analyzeManualExpense}
+                      onClick={(e) => analyzeManualExpense(e)}
                       disabled={loading || (!formData.store_name && !formData.description)}
                     >
                       {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <BrainCircuit className="w-3 h-3" />}

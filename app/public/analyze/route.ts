@@ -13,15 +13,47 @@ export async function POST(req: Request) {
     const { data: profile } = await supabase.from("profiles").select("gemini_api_key").eq("id", user.id).single();
     const apiKey = profile?.gemini_api_key;
 
-    const { image, storeName, totalAmount, description, items: providedItems } = await req.json();
+    const body = await req.json();
+    const { type, image, storeName, totalAmount, description, items: providedItems, history, budgetInfo } = body;
     
     if (!apiKey) {
       return new Response(JSON.stringify({ error: "Gemini API Key missing. Please add it in Profile Settings." }), { status: 400 });
     }
 
     const google = createGoogleGenerativeAI({ apiKey });
+
+    // Handle Financial Spending Analysis
+    if (type === "spending_summary") {
+      const result = await generateObject({
+        model: google("gemini-3.1-flash-lite-preview"),
+        schema: z.object({
+          status: z.string(),
+          summary: z.string(),
+          recommendations: z.array(z.string()),
+          savingPotential: z.string(),
+        }),
+        messages: [
+          {
+            role: "user",
+            content: `Analyze the following user spending history and budget data. 
+            Budget Info: ${JSON.stringify(budgetInfo)}
+            History: ${JSON.stringify(history)}
+            Provide a one-word financial status (e.g., "Healthy", "Overspending", "Stable", "At Risk"), a summary of their spending patterns, 3 actionable financial recommendations, and an estimate of their monthly saving potential based on their habits.`
+          }
+        ]
+      });
+
+      // Save to profile
+      await supabase.from("profiles").update({
+        last_analysis_date: new Date().toISOString(),
+        last_analysis_text: JSON.stringify(result.object)
+      }).eq("id", user.id);
+
+      return Response.json(result.object);
+    }
+
     const result = await generateObject({
-      model: google("gemini-3.1-flash-lite-preview"), // or your working version
+      model: google("gemini-3.1-flash-lite-preview"),
       schema: z.object({
         storeName: z.string(),
         totalAmount: z.number(),
@@ -43,8 +75,8 @@ export async function POST(req: Request) {
             { 
               type: "text", 
               text: image 
-                ? "Analyze this receipt. For each item, extract the name, total price, quantity, and a plasticRating (1-100, where 100 is eco-friendly). Also provide the storeName, totalAmount, a category (e.g. Groceries), isLocalBusiness (boolean), an overall ecoScore (1-100) based on the items, and an ecoTip."
-                : `Analyze this manual expense. Store: ${storeName}, Total: ${totalAmount}, Description: ${description}, Items: ${JSON.stringify(providedItems)}. Calculate an eco-score (1-100), category, and eco-friendly tip based on the environmental impact of these purchases.`
+                ? "Analyze this receipt. For each item, extract the name, total price, quantity, and a plasticRating (1-100, where 100 is zero-waste/organic). Provide the storeName, totalAmount, a category, isLocalBusiness (boolean), and an overall ecoScore (1-100). Use the full range: 80+ for local/organic/bulk, 40-60 for mixed, <30 for high-plastic/fast-food/corporate chains. Also include a helpful ecoTip."
+                : `Analyze this manual expense. Store: ${storeName}, Total: ${totalAmount}, Description: ${description}, Items: ${JSON.stringify(providedItems)}. Calculate an eco-score (1-100) using the full scale: 100 is perfectly sustainable, 50 is neutral, 1 is extremely high waste. Consider the store's reputation and the items listed. Also provide a category and a specific eco-friendly tip.`
             },
             ...(image ? [{ type: "image" as const, image }] : []),
           ],
