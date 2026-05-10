@@ -1,3 +1,4 @@
+//AI assisted code
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import { z } from "zod";
