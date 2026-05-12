@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { 
   Upload, Leaf, MapPin, Receipt, Loader2, History, Plus, Edit2, 
   Trash2, X, ChevronDown, ChevronUp, Save, BarChart3, Settings2, 
-  PieChart as PieChartIcon, BrainCircuit, User, LogOut, Settings,
+  PieChart as PieChartIcon, BrainCircuit, User, LogOut, Settings, Camera, Image as ImageIcon, RotateCcw, Check,
   TrendingUp, Lightbulb, LineChart as LineChartIcon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -52,10 +52,17 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showScanOptions, setShowScanOptions] = useState(false);
   
+  // 摄像头相关状态
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
   // Data States
   const [history, setHistory] = useState<any[]>([]);
-  const [profile, setProfile] = useState({ monthly_income: 0, saving_goal: 0, scheduled_expenses: 0, username: "", avatar_url: "", last_analysis_date: "", last_analysis_text: "", theme: "system", gradient_start: "", gradient_end: "" });
+  const [profile, setProfile] = useState({ monthly_income: 0, saving_goal: 0, scheduled_expenses: 0, username: "", avatar_url: "", last_analysis_date: "", last_analysis_text: "", theme: "system", gradient_start: "", gradient_end: "", font_size: "base" });
   const [data, setData] = useState<any>(null); // Last scan result
   const [scanError, setScanError] = useState<string | null>(null);
   const [aiAdvice, setAiAdvice] = useState<any>(null);
@@ -63,8 +70,10 @@ export default function Home() {
 
   // Cursor Following Fluid Shape Refs
   const blobRef = useRef<HTMLDivElement>(null);
+  const blob2Ref = useRef<HTMLDivElement>(null);
   const mousePos = useRef({ x: 0, y: 0 });
   const blobPos = useRef({ x: 0, y: 0 });
+  const blob2Pos = useRef({ x: 0, y: 0 });
 
   // Modal & Form States
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -102,10 +111,15 @@ export default function Home() {
       const easing = 0.06; // Adjust for smoothness (lower = slower/smoother)
       blobPos.current.x += (mousePos.current.x - blobPos.current.x) * easing;
       blobPos.current.y += (mousePos.current.y - blobPos.current.y) * easing;
+      
+      blob2Pos.current.x += (mousePos.current.x - blob2Pos.current.x) * (easing * 0.5);
+      blob2Pos.current.y += (mousePos.current.y - blob2Pos.current.y) * (easing * 0.5);
 
       if (blobRef.current) {
-        // Center the blob on the cursor
         blobRef.current.style.transform = `translate(${blobPos.current.x - 250}px, ${blobPos.current.y - 250}px)`;
+      }
+      if (blob2Ref.current) {
+        blob2Ref.current.style.transform = `translate(${blob2Pos.current.x - 150}px, ${blob2Pos.current.y - 150}px)`;
       }
 
       frameId = requestAnimationFrame(animate);
@@ -154,7 +168,11 @@ export default function Home() {
     const root = document.documentElement;
     if (profile.theme === "custom") root.classList.add("custom");
     else root.classList.remove("custom");
-  }, [profile.theme, mounted]);
+
+    // Apply Font Size
+    const sizes: Record<string, string> = { sm: "14px", base: "16px", lg: "18px", xl: "20px" };
+    root.style.fontSize = sizes[profile.font_size] || "16px";
+  }, [profile.theme, profile.font_size, mounted]);
 
   // --- Financial Calculations ---
   const totalSpent = history.reduce((sum, r) => sum + (r.total_amount || 0), 0);
@@ -257,56 +275,106 @@ export default function Home() {
     return Object.values(grouped);
   };
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const analyzeImage = async (base64: string) => {
     setScanError(null);
     setData(null);
     setLoading(true);
+    try {
+      const res = await fetch("/public/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: base64 }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        const message = result?.error || "Receipt analysis failed.";
+        setScanError(message);
+        return;
+      }
+      setData(result);
+
+      // Save result to Supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { error: saveError } = await supabase.from("receipts").insert({
+          user_id: user.id,
+          store_name: result.storeName || "Unknown Store",
+          total_amount: result.totalAmount || 0,
+          expense_type: result.category || "Scanned",
+          is_local_business: result.isLocalBusiness || false,
+          description: result.ecoTip || "",
+          items: result.items || [],
+          eco_score: result.ecoScore ?? 50,
+          color: "#10b981",
+        });
+        if (saveError) console.error("Error saving scan to history:", saveError);
+      }
+
+      fetchHistory();
+    } catch (err: any) {
+      console.error(err);
+      setScanError(err?.message || "Receipt analysis failed.");
+    } finally {
+      setLoading(false);
+      setIsCameraActive(false);
+      setCapturedImage(null);
+    }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = async () => {
-      try {
-        const base64 = (reader.result as string).split(",")[1];
-        const res = await fetch("/public/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: base64 }),
-        });
-        const result = await res.json();
-        if (!res.ok) {
-          const message = result?.error || "Receipt analysis failed.";
-          setScanError(message);
-          console.error("API Response error:", result);
-          return;
-        }
-        setData(result);
-
-        // Save the scanned results to Supabase history
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { error: saveError } = await supabase.from("receipts").insert({
-            user_id: user.id,
-            store_name: result.storeName || "Unknown Store",
-            total_amount: result.totalAmount || 0,
-            expense_type: result.category || "Scanned",
-            is_local_business: result.isLocalBusiness || false,
-            description: result.ecoTip || "",
-            items: result.items || [],
-            eco_score: result.ecoScore ?? 50,
-            color: "#10b981", // Default color for scanned entries
-          });
-          if (saveError) console.error("Error saving scan to history:", saveError);
-        }
-
-        fetchHistory();
-      } catch (err: any) {
-        console.error(err);
-        setScanError(err?.message || "Receipt analysis failed.");
-      } finally {
-        setLoading(false);
-      }
+      const base64 = (reader.result as string).split(",")[1];
+      await analyzeImage(base64);
     };
+  };
+
+  const startCamera = async () => {
+    setIsCameraActive(true);
+    setShowScanOptions(false);
+    setCapturedImage(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: "environment" }, 
+        audio: false 
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Camera access error:", err);
+      setScanError("Cannot access camera. Please allow camera permissions and try again.");
+      setIsCameraActive(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current?.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+    }
+    setIsCameraActive(false);
+    setCapturedImage(null);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx?.drawImage(video, 0, 0);
+      const dataUrl = canvas.toDataURL("image/jpeg");
+      setCapturedImage(dataUrl);
+      
+      // Stop camera stream after capturing
+      const stream = video.srcObject as MediaStream;
+      stream?.getTracks().forEach(track => track.stop());
+    }
   };
 
   const handleAdditionalImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -423,13 +491,23 @@ export default function Home() {
           : undefined 
       }}
     >
-      {/* Interactive Fluid Shape */}
+      {/* Multi-layered Tahoe Ambient Shapes */}
       <div 
         ref={blobRef}
-        className="fixed top-0 left-0 w-[500px] h-[500px] bg-white/20 rounded-full blur-[100px] pointer-events-none z-0 mix-blend-soft-light will-change-transform"
+        className="fixed top-0 left-0 w-[600px] h-[600px] bg-emerald-400/10 rounded-full blur-[120px] pointer-events-none z-0 will-change-transform animate-pulse"
         style={{ 
           opacity: mounted ? 1 : 0,
-          transition: 'opacity 1s ease'
+          transition: 'opacity 2s ease',
+          animationDuration: '8s'
+        }}
+      />
+      <div 
+        ref={blob2Ref}
+        className="fixed top-0 left-0 w-[300px] h-[300px] bg-blue-400/20 rounded-full blur-[80px] pointer-events-none z-0 will-change-transform"
+        style={{ 
+          opacity: mounted ? 1 : 0,
+          transition: 'opacity 3s ease',
+          animation: 'spin 12s linear infinite'
         }}
       />
 
@@ -487,11 +565,11 @@ export default function Home() {
                 { label: "Savings Goal", val: profile.saving_goal, prefix: "$", color: "text-blue-500" },
                 { label: "Budget Left", val: remainingBudget, prefix: "$", color: remainingBudget < 0 ? "text-red-500" : "text-green-500" },
                 { label: "Budget Progress", val: typeof budgetProgressPercentage === 'number' ? budgetProgressPercentage : 0, suffix: "%", color: isBudgetProgressOver ? "text-red-500" : "text-green-500", decimals: 0 },
-                { label: "Avg Eco-Score", val: avgEcoScore, suffix: "/100", color: "text-emerald-900", decimals: 0, bg: "bg-emerald-50 border-emerald-200" }
+                { label: "Avg Eco-Score", val: avgEcoScore, suffix: "/100", color: "text-emerald-700 dark:text-emerald-400", decimals: 0, bg: "bg-emerald-500/10 border-emerald-500/20 shadow-emerald-500/10" }
               ].map((stat, i) => (
-                <Card key={i} className={`hover:scale-105 hover:shadow-lg hover:border-primary/30 transition-all duration-300 cursor-default ${stat.bg || ""}`}>
-                  <CardContent className="p-4">
-                    <p className="text-sm text-muted-foreground">{stat.label}</p>
+                <Card key={i} className={`glass rounded-2xl cursor-default ${stat.bg || ""}`}>
+                  <CardContent className="p-5">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground mb-1">{stat.label}</p>
                     <p className={`text-2xl font-bold ${stat.color || ""}`}>
                       <AnimatedNumber value={stat.val} prefix={stat.prefix} suffix={stat.suffix} decimals={stat.decimals} />
                     </p>
@@ -500,7 +578,7 @@ export default function Home() {
               ))}
             </div>
 
-            <Card className="p-6 hover:shadow-md transition-shadow duration-300">
+            <Card className="glass rounded-3xl p-6">
               <div className="flex justify-between items-center mb-6">
                 <CardTitle className="flex items-center gap-2"><TrendingUp className="w-5 h-5" /> Spending vs. Budget Timeline</CardTitle>
               </div>
@@ -535,7 +613,7 @@ export default function Home() {
             </Card>
 
             <div className="grid md:grid-cols-3 gap-6">
-              <Card className="md:col-span-2 hover:shadow-md transition-shadow duration-300">
+              <Card className="md:col-span-2 glass rounded-3xl overflow-hidden">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle className="text-lg flex items-center gap-2">
                     <Lightbulb className="w-5 h-5 text-amber-500" /> AI Insights & Advice
@@ -572,7 +650,7 @@ export default function Home() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="glass rounded-3xl">
                 <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">By Category</CardTitle></CardHeader>
                 <CardContent className="h-48">
                   {expenseTypeData.length > 0 ? (
@@ -592,7 +670,7 @@ export default function Home() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="glass rounded-3xl">
                 <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">By Payment Method</CardTitle></CardHeader>
                 <CardContent className="h-48">
                   {paymentMethodData.length > 0 ? (
@@ -614,7 +692,7 @@ export default function Home() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="glass rounded-3xl">
                 <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">By Color Tags</CardTitle></CardHeader>
                 <CardContent className="h-48">
                   {colorTagData.length > 0 ? (
@@ -636,7 +714,7 @@ export default function Home() {
             </div>
 
             <div className="grid md:grid-cols-1">
-              <Card className="bg-primary text-primary-foreground flex flex-col justify-center p-6 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+              <Card className="bg-primary text-primary-foreground flex flex-col justify-center p-8 rounded-3xl shadow-2xl hover:-translate-y-1 transition-all duration-500 border-none">
                  <Settings2 className="w-8 h-8 mb-4" />
                  <h3 className="text-xl font-bold mb-2">Budget Settings</h3>
                  <p className="text-sm opacity-80 mb-4">Adjust your income and saving goals to keep your budget accurate.</p>
@@ -647,12 +725,56 @@ export default function Home() {
         ) : (
           <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-500">
             {/* Scanner Upload Section */}
-            <Card className="border-dashed border-2 bg-muted/50 py-10 flex flex-col items-center">
-              <input type="file" id="up" className="hidden" onChange={handleUpload} />
-              <Label htmlFor="up" className="cursor-pointer flex flex-col items-center">
-                {loading ? <Loader2 className="animate-spin" /> : <Upload />}
-                <p className="mt-2 font-medium">Scan Receipt</p>
-              </Label>
+            <Card className={`glass border-dashed border-2 relative overflow-hidden transition-all duration-500 ${isCameraActive ? 'py-6 min-h-[500px]' : 'py-10 min-h-[160px]'} flex flex-col items-center justify-center`}>
+              {isCameraActive ? (
+                <div className="w-full h-full flex flex-col items-center gap-6 animate-in zoom-in-95 duration-300 px-4">
+                  <div className="relative w-full max-w-xs aspect-[3/4] bg-black rounded-xl overflow-hidden shadow-2xl border-4 border-background">
+                    {!capturedImage ? (
+                      <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
+                    ) : (
+                      <img src={capturedImage} alt="Captured" className="w-full h-full object-cover scale-x-[-1]" />
+                    )}
+                  </div>
+                  <div className="flex gap-4">
+                    {!capturedImage ? (
+                      <>
+                        <Button variant="outline" onClick={stopCamera}>Cancel</Button>
+                        <Button onClick={capturePhoto} className="px-8"><Camera className="w-4 h-4 mr-2" /> Capture</Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button variant="outline" onClick={startCamera}><RotateCcw className="w-4 h-4 mr-2" /> Retake</Button>
+                        <Button onClick={() => analyzeImage(capturedImage.split(",")[1])} className="bg-emerald-600 hover:bg-emerald-700 px-8">
+                          <Check className="w-4 h-4 mr-2" /> Use Image
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  <canvas ref={canvasRef} className="hidden" />
+                </div>
+              ) : !showScanOptions ? (
+                <div className="cursor-pointer flex flex-col items-center group" onClick={() => setShowScanOptions(true)}>
+                  {loading ? <Loader2 className="animate-spin text-primary" /> : <Upload className="group-hover:scale-110 transition-transform text-primary" />}
+                  <p className="mt-2 font-bold uppercase text-xs tracking-widest text-primary">Scan Receipt</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3 w-full max-w-[220px] animate-in fade-in zoom-in-95 duration-200 px-4">
+                  <div className="flex justify-between items-center mb-1">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Select Source</p>
+                    <X className="w-3 h-3 cursor-pointer hover:text-primary transition-colors" onClick={() => setShowScanOptions(false)} />
+                  </div>
+                  
+                  <Button variant="outline" className="flex items-center gap-3 justify-start h-12 w-full hover:border-primary/50" onClick={() => (document.getElementById('up-file') as HTMLInputElement)?.click()}>
+                    <ImageIcon className="w-4 h-4 text-primary" /> Upload Image
+                  </Button>
+                  
+                  <Button variant="outline" className="flex items-center gap-3 justify-start h-12 w-full hover:border-primary/50" onClick={startCamera}>
+                    <Camera className="w-4 h-4 text-primary" /> Use Camera
+                  </Button>
+                  
+                  <input type="file" id="up-file" accept="image/*" className="hidden" onChange={(e) => { handleUpload(e); setShowScanOptions(false); }} />
+                </div>
+              )}
             </Card>
 
             {scanError && (
@@ -712,7 +834,7 @@ export default function Home() {
 
             <div className="space-y-3">
               {history.map((r) => (
-                <Card key={r.id} className="overflow-hidden hover:border-primary/40 transition-colors duration-200" style={{ borderLeft: `6px solid ${r.color}` }}>
+                <Card key={r.id} className="glass overflow-hidden rounded-2xl transition-all duration-300" style={{ borderLeft: `6px solid ${r.color}` }}>
                   <div className="p-4 flex justify-between items-center cursor-pointer" onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}>
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center font-bold">{r.eco_score}</div>
