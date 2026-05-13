@@ -1,12 +1,13 @@
 //AI assisted code
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { 
   Upload, Leaf, MapPin, Receipt, Loader2, History, Plus, Edit2, 
   Trash2, X, ChevronDown, ChevronUp, Save, BarChart3, Settings2, 
   PieChart as PieChartIcon, BrainCircuit, User, LogOut, Settings, Camera, Image as ImageIcon, RotateCcw, Check,
-  TrendingUp, Lightbulb, LineChart as LineChartIcon
+  TrendingUp, Lightbulb, LineChart as LineChartIcon, Search, Filter, Download, Trophy, MessageSquare, Send, Users, UserPlus
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,10 +46,12 @@ const AnimatedNumber = ({ value, prefix = "", suffix = "", decimals = 2 }: { val
   return <span>{prefix}{displayValue.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}{suffix}</span>;
 };
 
-export default function Home() {
+function HomeContent() {
   const supabase = createClient();
   const { setTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState<"dashboard" | "scanner">("scanner");
+  const searchParams = useSearchParams();
+  const tid = searchParams.get("tid");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "scanner" | "friends">("scanner");
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -62,11 +65,29 @@ export default function Home() {
 
   // Data States
   const [history, setHistory] = useState<any[]>([]);
-  const [profile, setProfile] = useState({ monthly_income: 0, saving_goal: 0, scheduled_expenses: 0, username: "", avatar_url: "", last_analysis_date: "", last_analysis_text: "", theme: "system", gradient_start: "", gradient_end: "", font_size: "base" });
+  const [profile, setProfile] = useState({ 
+    monthly_income: 0, saving_goal: 0, scheduled_expenses: 0, username: "", avatar_url: "", 
+    last_analysis_date: "", last_analysis_text: "", theme: "system", 
+    font_size: "base",
+    gradient_type: "linear",
+    gradient_direction: "to bottom right",
+    gradient_stops: [{ color: "#ffffff", position: 0 }, { color: "#f3f4f6", position: 100 }] as {color: string, position: number}[],
+    use_custom_cursor: true
+  });
   const [data, setData] = useState<any>(null); // Last scan result
   const [scanError, setScanError] = useState<string | null>(null);
   const [aiAdvice, setAiAdvice] = useState<any>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [itemToDeleteId, setItemToDeleteId] = useState<string | null>(null);
+
+  // Friends & Messaging State
+  const [friendsData, setFriendsData] = useState<any[]>([]);
+  const [receivedMessages, setReceivedMessages] = useState<any[]>([]);
+  const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
+  const [selectedFriend, setSelectedFriend] = useState<any>(null);
+  const [messageContent, setMessageContent] = useState("");
+  const [isNudgesModalOpen, setIsNudgesModalOpen] = useState(false);
 
   // Cursor Following Fluid Shape Refs
   const blobRef = useRef<HTMLDivElement>(null);
@@ -80,6 +101,9 @@ export default function Home() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAdvanced, setIsAdvanced] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchScope, setSearchScope] = useState("all");
+  const [notification, setNotification] = useState<{ message: string; type: "success" | "error" } | null>(null);
   
   const defaultForm = {
     store_name: "", total_amount: "", expense_type: "", description: "", 
@@ -92,8 +116,17 @@ export default function Home() {
 
   useEffect(() => { 
     setMounted(true);
-    fetchHistory(); 
-    fetchProfile();
+    const init = async () => {
+      const { data: { user: authUser }, error } = await supabase.auth.getUser();
+      if (authUser && !error) {
+        setCurrentUserId(authUser.id);
+        fetchHistory(); 
+        fetchProfile(authUser.id);
+        fetchFriendsData(authUser.id);
+        fetchMessages(authUser.id);
+      }
+    };
+    init();
   }, []);
 
   useEffect(() => {
@@ -132,16 +165,46 @@ export default function Home() {
     };
   }, [mounted]);
 
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => setNotification(null), 4000);
+      return () => clearTimeout(timer);
+    };
+  }, [mounted]);
+
+  // --- Financial Calculations (Moved up to fix initialization ReferenceError) ---
+  const totalSpent = history.reduce((sum, r) => sum + (r.total_amount || 0), 0);
+  const remainingBudget = profile.monthly_income - profile.scheduled_expenses - profile.saving_goal - totalSpent;
+
+  const avgEcoScore = history.length > 0 
+    ? Math.round(history.reduce((sum, r) => sum + (r.eco_score || 0), 0) / history.length) 
+    : 0;
+
+  // Update user's own competition stats in the profile
+  useEffect(() => {
+    if (!mounted || history.length === 0 || !currentUserId) return;
+    
+    const syncStats = async () => {
+      await supabase.from("profiles").update({
+        avg_eco_score: avgEcoScore,
+        total_spent_current_month: totalSpent
+      }).eq("id", currentUserId);
+    };
+    
+    syncStats();
+  }, [history, avgEcoScore, totalSpent, currentUserId]);
+
   const fetchHistory = async () => {
     const { data } = await supabase.from("receipts").select("*").order("created_at", { ascending: false });
     setHistory(data || []);
   };
 
-  const fetchProfile = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single();
-    if (data) {
+  const fetchProfile = async (userId?: string | any) => {
+    const id = typeof userId === 'string' ? userId : currentUserId;
+    if (!id) return;
+
+    const { data, error } = await supabase.from("profiles").select("*").eq("id", id).single();
+    if (data && !error) {
       setProfile(data);
       
       // Sync theme preference with next-themes on mount
@@ -172,11 +235,114 @@ export default function Home() {
     // Apply Font Size
     const sizes: Record<string, string> = { sm: "14px", base: "16px", lg: "18px", xl: "20px" };
     root.style.fontSize = sizes[profile.font_size] || "16px";
+
+    // Manage Custom Cursor visibility
+    if (profile.use_custom_cursor === false) {
+      root.classList.add("no-custom-cursor");
+    } else {
+      root.classList.remove("no-custom-cursor");
+    }
   }, [profile.theme, profile.font_size, mounted]);
 
-  // --- Financial Calculations ---
-  const totalSpent = history.reduce((sum, r) => sum + (r.total_amount || 0), 0);
-  const remainingBudget = profile.monthly_income - profile.scheduled_expenses - profile.saving_goal - totalSpent;
+  // Helper to build gradient string
+  const getGradientStyle = () => {
+    if (profile.theme !== "custom") return undefined;
+    const stops = [...profile.gradient_stops]
+      .sort((a, b) => a.position - b.position)
+      .map(s => `${s.color} ${s.position}%`)
+      .join(', ');
+    
+    if (profile.gradient_direction === 'radial') {
+      return `radial-gradient(circle at center, ${stops})`;
+    }
+    return `linear-gradient(${profile.gradient_direction}, ${stops})`;
+  };
+
+  const fetchMessages = async (userId: string) => {
+    if (!userId) return;
+    
+    const { data, error } = await supabase
+      .from("messages")
+      .select("id, content, created_at, sender:sender_id(username, avatar_url)")
+      .eq("receiver_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (error) {
+      console.error("Error fetching messages:", error);
+    } else {
+      setReceivedMessages(data || []);
+    }
+  };
+
+  const fetchFriendsData = async (userId?: string | any) => {
+    const id = typeof userId === 'string' ? userId : (currentUserId || null);
+    if (!id || typeof id !== 'string') {
+      console.warn("fetchFriendsData: No valid User ID found");
+      return;
+    }
+
+    // 1. Get IDs of all confirmed friends
+    const { data: friends, error: friendsErr } = await supabase
+      .from("friends")
+      .select("user1_id, user2_id")
+      .or(`user1_id.eq.${id},user2_id.eq.${id}`);
+
+    if (friendsErr) {
+      console.error("Error fetching friends list:", friendsErr);
+      return;
+    }
+
+    if (friends) {
+      // Map to get the ID of the 'other' person in each friendship
+      const friendIds = friends
+        .map((f: any) => f.user1_id === id ? f.user2_id : f.user1_id)
+        .filter((fid: any) => typeof fid === 'string' && fid.length > 0);
+      
+      const uniqueIds = Array.from(new Set([id, ...friendIds]));
+
+      // 2. Fetch profiles for self and friends for leaderboard
+      const { data: profiles, error: profilesErr } = await supabase
+        .from("profiles")
+        .select("id, username, avatar_url, avg_eco_score, total_spent_current_month")
+        .in("id", uniqueIds);
+
+      if (profilesErr) {
+        console.error("Error fetching friend profiles:", JSON.stringify(profilesErr, null, 2));
+      } else if (profiles) {
+        const mapped = profiles.map(p => ({
+            ...p,
+            isSelf: p.id === id,
+            score: p.avg_eco_score || 0
+          }));
+        // Sort by eco score descending
+        const sorted = [...mapped].sort((a, b) => b.score - a.score);
+        setFriendsData(sorted);
+      }
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!messageContent.trim() || !selectedFriend) return;
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { error } = await supabase.from("messages").insert({
+      sender_id: user.id,
+      receiver_id: selectedFriend.id,
+      content: messageContent
+    });
+
+    if (error) {
+      console.error("Message send error:", error);
+      setNotification({ message: `Failed to send message: ${error.message}`, type: "error" });
+    } else {
+      setNotification({ message: `Encouragement sent to ${selectedFriend.username}!`, type: "success" });
+      setMessageContent("");
+      setIsMessageModalOpen(false);
+    }
+  };
 
   // Calculate Budget Progress Percentage
   let budgetProgressPercentage: number | string = 0;
@@ -235,11 +401,7 @@ export default function Home() {
     }
     return data;
   };
-
-  const avgEcoScore = history.length > 0 
-    ? Math.round(history.reduce((sum, r) => sum + (r.eco_score || 0), 0) / history.length) 
-    : 0;
-
+  
   const expenseTypeData = Object.values(history.reduce((acc: any, curr) => {
     const type = curr.expense_type || "Uncategorized";
     if (!acc[type]) acc[type] = { name: type, value: 0, color: curr.color || "#10b981" };
@@ -275,6 +437,40 @@ export default function Home() {
     return Object.values(grouped);
   };
 
+  const filteredHistory = history.filter(r => {
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    
+    switch (searchScope) {
+      case "store": return r.store_name?.toLowerCase().includes(term);
+      case "category": return r.expense_type?.toLowerCase().includes(term);
+      case "item": return r.items?.some((i: any) => i.name?.toLowerCase().includes(term));
+      case "price": return r.total_amount?.toString().includes(term);
+      case "payment": return r.payment_method?.toLowerCase().includes(term);
+      case "description": return r.description?.toLowerCase().includes(term);
+      case "tag": return r.color?.toLowerCase().includes(term);
+      default: // "all"
+        return (
+          r.store_name?.toLowerCase().includes(term) || 
+          r.expense_type?.toLowerCase().includes(term) ||
+          r.items?.some((i: any) => i.name?.toLowerCase().includes(term)) ||
+          r.description?.toLowerCase().includes(term) ||
+          r.payment_method?.toLowerCase().includes(term)
+        );
+    }
+  });
+
+  const exportToCSV = () => {
+    const headers = ["Date,Store,Amount,Category,Eco Score\n"];
+    const rows = history.map(r => `${new Date(r.created_at).toLocaleDateString()},"${r.store_name}",${r.total_amount},"${r.expense_type}",${r.eco_score}`);
+    const blob = new Blob([headers + rows.join("\n")], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `eco-budget-export-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  };
+
   const analyzeImage = async (base64: string) => {
     setScanError(null);
     setData(null);
@@ -285,9 +481,18 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: base64 }),
       });
-      const result = await res.json();
+
+      let result;
+      try {
+        result = await res.json();
+      } catch (parseError) {
+        setNotification({ message: "Invalid server response. Please check your Gemini API key in settings.", type: "error" });
+        return;
+      }
+
       if (!res.ok) {
-        const message = result?.error || "Receipt analysis failed.";
+        const message = result?.error || "Receipt analysis failed. Please check your Gemini API key.";
+        setNotification({ message, type: "error" });
         setScanError(message);
         return;
       }
@@ -429,14 +634,22 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const result = await res.json();
+
+      let result;
+      try {
+        result = await res.json();
+      } catch (parseError) {
+        setNotification({ message: "Invalid AI response. Please check your Gemini API key in settings.", type: "error" });
+        return;
+      }
+
       console.log("AI Analysis response:", result, "Status:", res.status);
       
       if (res.ok && result.ecoScore !== undefined) {
         console.log("Successfully got ecoScore:", result.ecoScore);
         setFormData(prev => {
-          const updated = { 
-            ...prev, 
+          const updated = {
+            ...prev,
             eco_score: result.ecoScore,
             expense_type: result.category || prev.expense_type,
             description: result.ecoTip ? (prev.description ? `${prev.description}\n\nTip: ${result.ecoTip}` : result.ecoTip) : prev.description
@@ -445,11 +658,11 @@ export default function Home() {
         });
       } else {
         console.error("AI Analysis failed or missing ecoScore:", result);
-        alert(`Error: ${result.error || "Failed to generate eco-score"}`);
+        setNotification({ message: result.error || "Failed to generate eco-score", type: "error" });
       }
     } catch (err) {
       console.error("AI Analysis failed:", err);
-      alert("Error analyzing expense");
+      setNotification({ message: "Error analyzing expense", type: "error" });
     } finally {
       setLoading(false);
     }
@@ -471,9 +684,19 @@ export default function Home() {
           }
         }),
       });
-      const result = await res.json();
+
+      let result;
+      try {
+        result = await res.json();
+      } catch (parseError) {
+        setNotification({ message: "Could not parse AI advice. Check your Gemini API key.", type: "error" });
+        return;
+      }
+
       if (res.ok) {
         setAiAdvice(result);
+      } else {
+        setNotification({ message: result?.error || "Could not get AI advice.", type: "error" });
       }
     } catch (err) {
       console.error("Advice request failed:", err);
@@ -485,12 +708,17 @@ export default function Home() {
   return (
     <main 
       className="relative min-h-screen p-4 md:p-8 pb-24 transition-all duration-500 bg-background overflow-hidden"
-      style={{ 
-        background: profile.theme === "custom" && profile.gradient_start && profile.gradient_end 
-          ? `linear-gradient(to bottom right, ${profile.gradient_start}, ${profile.gradient_end})`
-          : undefined 
-      }}
+      style={{ background: profile.theme === "custom" ? getGradientStyle() : undefined }}
     >
+      {notification && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className={`glass px-6 py-3 rounded-2xl flex items-center gap-3 border-l-4 shadow-2xl ${notification.type === 'error' ? 'border-destructive' : 'border-emerald-500'}`}>
+            {notification.type === 'error' ? <X className="w-4 h-4 text-destructive" /> : <Check className="w-4 h-4 text-emerald-500" />}
+            <p className="text-sm font-bold">{notification.message}</p>
+          </div>
+        </div>
+      )}
+
       {/* Multi-layered Tahoe Ambient Shapes */}
       <div 
         ref={blobRef}
@@ -521,13 +749,16 @@ export default function Home() {
             <div className="hidden sm:flex gap-2 mr-4">
               <Button variant={activeTab === "dashboard" ? "default" : "outline"} onClick={() => setActiveTab("dashboard")}>Dashboard</Button>
               <Button variant={activeTab === "scanner" ? "default" : "outline"} onClick={() => setActiveTab("scanner")}>Scanner</Button>
+              <Button variant={activeTab === "friends" ? "default" : "outline"} onClick={() => setActiveTab("friends")}>Friends</Button>
             </div>
             
             <div className="relative">
               <div className="flex items-center gap-3 cursor-pointer" onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}>
                 <div className="text-right hidden md:block">
-                  <p className="text-sm font-bold leading-none">{profile.username || "Set Username"}</p>
-                  <p className="text-[10px] text-muted-foreground mt-1">Avg Score: {avgEcoScore}</p>
+                  <p className="text-sm font-bold leading-none">{profile.username || (currentUserId ? "Set Username" : "Guest User")}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    {currentUserId ? `Avg Score: ${avgEcoScore}` : "Sign in to compete"}
+                  </p>
                 </div>
                 <div className="w-10 h-10 rounded-full border bg-muted overflow-hidden flex items-center justify-center hover:ring-2 hover:ring-primary transition-all">
                   {profile.avatar_url ? (
@@ -540,15 +771,22 @@ export default function Home() {
 
               {isUserMenuOpen && (
                 <div className="absolute top-full right-0 mt-2 w-48 bg-card border rounded-md shadow-lg z-50 py-1 animate-in fade-in zoom-in-95">
-                  <Link href="/settings" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-muted w-full transition-colors">
-                    <Settings className="w-4 h-4" /> Edit Profile
+                  {currentUserId && (
+                    <Link href={`/settings${tid ? `?tid=${tid}` : ""}`} className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-muted w-full transition-colors">
+                      <Settings className="w-4 h-4" /> Edit Profile
+                    </Link>
+                  )}
+                  <Link href="/auth/login" target="_blank" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-muted w-full transition-colors">
+                    <UserPlus className="w-4 h-4" /> {currentUserId ? "Switch Account" : "Log In"}
                   </Link>
-                  <button 
-                    onClick={async () => { await supabase.auth.signOut(); window.location.reload(); }}
-                    className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-destructive/10 text-destructive w-full transition-colors"
-                  >
-                    <LogOut className="w-4 h-4" /> Sign Out
-                  </button>
+                  {currentUserId && (
+                    <button 
+                      onClick={async () => { await supabase.auth.signOut(); window.location.reload(); }}
+                      className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-destructive/10 text-destructive w-full transition-colors"
+                    >
+                      <LogOut className="w-4 h-4" /> Sign Out
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -556,7 +794,7 @@ export default function Home() {
         </header>
 
         {activeTab === "dashboard" ? (
-          <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
+          <div key="dashboard" className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-700 fill-mode-both">
             {/* Budget Stats */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               {[
@@ -567,7 +805,7 @@ export default function Home() {
                 { label: "Budget Progress", val: typeof budgetProgressPercentage === 'number' ? budgetProgressPercentage : 0, suffix: "%", color: isBudgetProgressOver ? "text-red-500" : "text-green-500", decimals: 0 },
                 { label: "Avg Eco-Score", val: avgEcoScore, suffix: "/100", color: "text-emerald-700 dark:text-emerald-400", decimals: 0, bg: "bg-emerald-500/10 border-emerald-500/20 shadow-emerald-500/10" }
               ].map((stat, i) => (
-                <Card key={i} className={`glass rounded-2xl cursor-default ${stat.bg || ""}`}>
+                <Card key={i} className={`glass rounded-2xl cursor-default ${stat.bg || ""} animate-in fade-in slide-in-from-bottom-4 duration-700`} style={{ animationDelay: `${i * 100}ms` }}>
                   <CardContent className="p-5">
                     <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground mb-1">{stat.label}</p>
                     <p className={`text-2xl font-bold ${stat.color || ""}`}>
@@ -578,7 +816,7 @@ export default function Home() {
               ))}
             </div>
 
-            <Card className="glass rounded-3xl p-6">
+            <Card className="glass rounded-3xl p-6 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-300">
               <div className="flex justify-between items-center mb-6">
                 <CardTitle className="flex items-center gap-2"><TrendingUp className="w-5 h-5" /> Spending vs. Budget Timeline</CardTitle>
               </div>
@@ -613,7 +851,7 @@ export default function Home() {
             </Card>
 
             <div className="grid md:grid-cols-3 gap-6">
-              <Card className="md:col-span-2 glass rounded-3xl overflow-hidden">
+              <Card className="md:col-span-2 glass rounded-3xl overflow-hidden animate-in fade-in slide-in-from-left-8 duration-1000 delay-500">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle className="text-lg flex items-center gap-2">
                     <Lightbulb className="w-5 h-5 text-amber-500" /> AI Insights & Advice
@@ -722,8 +960,70 @@ export default function Home() {
               </Card>
             </div>
           </div>
+        ) : activeTab === "friends" ? (
+          <div key="friends" className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-700 fill-mode-both max-w-2xl mx-auto">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-2xl font-bold flex items-center gap-2">
+                <Trophy className="w-6 h-6 text-amber-500" /> Eco-Leaderboard
+              </h2>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setIsNudgesModalOpen(true)} className="relative h-9 rounded-xl hover:bg-primary/10 transition-colors">
+                  <MessageSquare className="w-4 h-4 mr-2" /> Nudges
+                  {receivedMessages.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-primary text-[10px] text-primary-foreground rounded-full flex items-center justify-center animate-pulse border-2 border-background font-bold">
+                      {receivedMessages.length}
+                    </span>
+                  )}
+                </Button>
+                <Button variant="ghost" size="sm" className="h-9 rounded-xl hover:bg-primary/10 transition-colors" onClick={() => { fetchFriendsData(); if (currentUserId) fetchMessages(currentUserId); }}>
+                  <RotateCcw className="w-4 h-4 mr-2" /> Sync
+                </Button>
+              </div>
+            </div>
+            
+            <div className="space-y-3">
+              {friendsData.length > 0 ? (
+                friendsData.map((friend, i) => (
+                  <Card key={friend.id} className={`glass rounded-2xl overflow-hidden border-none transition-all duration-300 ${friend.isSelf ? 'ring-2 ring-primary/50 bg-primary/5' : ''}`}>
+                    <CardContent className="p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-8 text-center font-bold text-muted-foreground">
+                          {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}
+                        </div>
+                        <div className="w-10 h-10 rounded-full border bg-muted overflow-hidden">
+                          {friend.avatar_url ? <img src={friend.avatar_url} className="w-full h-full object-cover" /> : <User className="w-full h-full p-2 text-muted-foreground" />}
+                        </div>
+                        <div>
+                          <p className="font-bold text-sm">{friend.username} {friend.isSelf && "(You)"}</p>
+                          <p className="text-[10px] text-muted-foreground uppercase tracking-tight">Month Spend: ${friend.total_spent_current_month?.toFixed(0) || 0}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-6">
+                        <div className="text-right">
+                          <p className="text-[10px] text-muted-foreground uppercase font-bold">Eco Score</p>
+                          <p className={`text-xl font-black ${friend.score > 80 ? 'text-emerald-500' : 'text-primary'}`}>{friend.score}</p>
+                        </div>
+                        {!friend.isSelf && (
+                          <Button variant="ghost" size="icon" className="rounded-full" onClick={() => { setSelectedFriend(friend); setIsMessageModalOpen(true); }}>
+                            <MessageSquare className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              ) : (
+                <div className="text-center py-20 glass rounded-3xl">
+                  <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-20" />
+                  <p className="text-muted-foreground">Add friends in Settings to start competing!</p>
+                  <Link href={`/settings${tid ? `?tid=${tid}` : ""}`} className="text-primary text-sm font-bold hover:underline mt-2 inline-block">Go to Settings</Link>
+                </div>
+              )}
+            </div>
+          </div>
         ) : (
-          <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-500">
+          <div key="scanner" className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-700 fill-mode-both">
             {/* Scanner Upload Section */}
             <Card className={`glass border-dashed border-2 relative overflow-hidden transition-all duration-500 ${isCameraActive ? 'py-6 min-h-[500px]' : 'py-10 min-h-[160px]'} flex flex-col items-center justify-center`}>
               {isCameraActive ? (
@@ -823,18 +1123,53 @@ export default function Home() {
                   </div>
                 )}
               </div>
-              <Button onClick={() => { 
-                setEditingId(null); 
-                setFormData({ ...defaultForm, created_at: new Date().toISOString() }); 
-                setIsModalOpen(true); 
-              }}>
-                <Plus className="w-4 h-4 mr-2" /> Manual Entry
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={exportToCSV} disabled={history.length === 0}>
+                  <Download className="w-4 h-4 mr-2" /> Export
+                </Button>
+                <Button onClick={() => { 
+                  setEditingId(null); 
+                  setFormData({ ...defaultForm, created_at: new Date().toISOString() }); 
+                  setIsModalOpen(true); 
+                }}>
+                  <Plus className="w-4 h-4 mr-2" /> Manual Entry
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input 
+                  placeholder={`Search by ${searchScope === 'all' ? 'any field' : searchScope}...`} 
+                  className="pl-10 glass border-none" 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+              <div className="relative flex items-center group sm:w-48">
+                <Filter className="absolute left-3 w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors z-10" />
+                <select 
+                  className="w-full pl-9 pr-10 py-2 glass border-none text-sm font-bold focus:ring-2 focus:ring-primary/20 cursor-pointer appearance-none rounded-xl outline-none"
+                  value={searchScope}
+                  onChange={(e) => setSearchScope(e.target.value)}
+                >
+                  <option value="all" className="bg-background text-foreground">All Fields</option>
+                  <option value="store" className="bg-background text-foreground">Store Name</option>
+                  <option value="category" className="bg-background text-foreground">Category</option>
+                  <option value="item" className="bg-background text-foreground">Item Name</option>
+                  <option value="price" className="bg-background text-foreground">Total Price</option>
+                  <option value="payment" className="bg-background text-foreground">Payment Method</option>
+                  <option value="description" className="bg-background text-foreground">Description</option>
+                  <option value="tag" className="bg-background text-foreground">Tag Color</option>
+                </select>
+                <ChevronDown className="absolute right-3 w-4 h-4 text-muted-foreground pointer-events-none group-hover:text-primary transition-colors" />
+              </div>
             </div>
 
             <div className="space-y-3">
-              {history.map((r) => (
-                <Card key={r.id} className="glass overflow-hidden rounded-2xl transition-all duration-300" style={{ borderLeft: `6px solid ${r.color}` }}>
+              {filteredHistory.map((r, i) => (
+                <Card key={r.id} className="glass overflow-hidden rounded-2xl transition-all duration-300 animate-in fade-in slide-in-from-bottom-2" style={{ borderLeft: `6px solid ${r.color}`, animationDelay: `${i * 50}ms` }}>
                   <div className="p-4 flex justify-between items-center cursor-pointer" onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}>
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center font-bold">{r.eco_score}</div>
@@ -897,12 +1232,9 @@ export default function Home() {
                           }); 
                           setIsModalOpen(true); 
                         }}>Edit</Button>
-                        <Button size="sm" variant="destructive" onClick={async () => {
-                          if (confirm("Delete this expense?")) {
-                            await supabase.from("receipts").delete().eq("id", r.id);
-                            fetchHistory();
-                          }
-                        }}>Delete</Button>
+                        <Button size="sm" variant="destructive" onClick={() => setItemToDeleteId(r.id)}>
+                          Delete
+                        </Button>
                       </div>
                     </CardContent>
                     </div>
@@ -916,8 +1248,8 @@ export default function Home() {
 
       {/* Manual Entry Modal with Advanced Options */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-lg overflow-y-auto max-h-[90vh]">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-500">
+          <Card className="w-full max-w-lg overflow-y-auto max-h-[90vh] animate-in zoom-in-95 fade-in slide-in-from-bottom-8 duration-500">
             <CardHeader className="flex flex-row justify-between items-center">
               <CardTitle>Manual Expense</CardTitle>
               <Button size="icon" variant="ghost" onClick={() => setIsModalOpen(false)}><X /></Button>
@@ -1087,8 +1419,8 @@ export default function Home() {
       )}
       {/* Budget Settings Modal */}
       {isSettingsOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-sm">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-500">
+          <Card className="w-full max-w-sm animate-in zoom-in-95 fade-in slide-in-from-bottom-8 duration-500">
             <CardHeader className="flex flex-row justify-between items-center">
               <CardTitle>Budget Settings</CardTitle>
               <Button variant="ghost" size="icon" onClick={() => setIsSettingsOpen(false)}><X/></Button>
@@ -1117,6 +1449,92 @@ export default function Home() {
           </Card>
         </div>
       )}
+
+      {/* Messaging Modal */}
+      {isMessageModalOpen && selectedFriend && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-500">
+          <Card className="w-full max-w-sm animate-in zoom-in-95 fade-in slide-in-from-bottom-8 duration-500 overflow-hidden">
+            <CardHeader className="bg-primary/5 pb-4">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full border overflow-hidden">
+                    {selectedFriend.avatar_url ? <img src={selectedFriend.avatar_url} className="w-full h-full object-cover" /> : <User className="w-full h-full p-1 text-muted-foreground" />}
+                  </div>
+                  <CardTitle className="text-sm">Nudge {selectedFriend.username}</CardTitle>
+                </div>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsMessageModalOpen(false)}><X className="w-4 h-4" /></Button>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-4 space-y-4">
+              <Textarea 
+                placeholder="Send some encouragement or an eco-tip..." 
+                className="min-h-[100px] glass border-none"
+                value={messageContent}
+                onChange={(e) => setMessageContent(e.target.value)}
+              />
+              <Button className="w-full" onClick={sendMessage} disabled={!messageContent.trim()}>
+                <Send className="w-4 h-4 mr-2" /> Send Message
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Received Nudges Modal */}
+      {isNudgesModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-500">
+          <Card className="w-full max-w-md animate-in zoom-in-95 fade-in slide-in-from-bottom-8 duration-500 overflow-hidden shadow-2xl">
+            <CardHeader className="flex flex-row items-center justify-between pb-3 border-b bg-muted/20">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-primary" /> Recent Nudges
+              </CardTitle>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => setIsNudgesModalOpen(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="pt-4 max-h-[60vh] overflow-y-auto space-y-4">
+              {receivedMessages.length > 0 ? (
+                receivedMessages.map((msg) => (
+                  <div key={msg.id} className="glass p-4 rounded-2xl flex items-start gap-3 border-none bg-primary/5 animate-in slide-in-from-left-2">
+                    <div className="w-10 h-10 rounded-full border bg-background overflow-hidden flex-shrink-0 flex items-center justify-center">
+                      {msg.sender?.avatar_url ? (
+                        <img src={msg.sender.avatar_url} className="w-full h-full object-cover" />
+                      ) : (
+                        <User className="w-5 h-5 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs font-bold text-primary mb-1">{msg.sender?.username || "Someone"}</p>
+                      <p className="text-sm italic leading-relaxed text-foreground">"{msg.content}"</p>
+                      <p className="text-[9px] text-muted-foreground mt-2 font-medium">
+                        {new Date(msg.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-20 text-center text-muted-foreground">
+                  <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-5" />
+                  <p className="text-sm">No nudges yet. Your friends are quiet today!</p>
+                </div>
+              )}
+            </CardContent>
+            <CardHeader className="pt-0 border-t bg-muted/10">
+              <p className="text-[10px] text-center text-muted-foreground italic">
+                Encourage your friends to boost their Eco-Score!
+              </p>
+            </CardHeader>
+          </Card>
+        </div>
+      )}
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center"><Loader2 className="animate-spin text-primary" /></div>}>
+      <HomeContent />
+    </Suspense>
   );
 }

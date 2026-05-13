@@ -38,8 +38,10 @@ export function LoginForm({
         password,
       });
       if (error) throw error;
-      // Update this route to redirect to an authenticated route. The user already has an active session.
-      router.push("/protected");
+      
+      // Create a unique Tab ID for this session and redirect
+      const tid = Math.random().toString(36).substring(7);
+      router.push(`/?tid=${tid}`);
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred");
     } finally {

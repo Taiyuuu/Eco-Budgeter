@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     const { type, image, storeName, totalAmount, description, items: providedItems, history, budgetInfo } = body;
     
     if (!apiKey) {
-      return new Response(JSON.stringify({ error: "Gemini API Key missing. Please add it in Profile Settings." }), { status: 400 });
+      return Response.json({ error: "Gemini API Key missing. Please add it in Profile Settings." }, { status: 400 });
     }
 
     const google = createGoogleGenerativeAI({ apiKey });
@@ -91,6 +91,6 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     console.error("FULL ERROR LOG:", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    return Response.json({ error: error.message }, { status: 500 });
   }
 }
