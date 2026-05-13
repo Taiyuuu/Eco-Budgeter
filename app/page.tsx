@@ -71,8 +71,7 @@ function HomeContent() {
     font_size: "base",
     gradient_type: "linear",
     gradient_direction: "to bottom right",
-    gradient_stops: [{ color: "#ffffff", position: 0 }, { color: "#f3f4f6", position: 100 }] as {color: string, position: number}[],
-    use_custom_cursor: true
+    gradient_stops: [{ color: "#ffffff", position: 0 }, { color: "#f3f4f6", position: 100 }] as {color: string, position: number}[]
   });
   const [data, setData] = useState<any>(null); // Last scan result
   const [scanError, setScanError] = useState<string | null>(null);
@@ -167,10 +166,10 @@ function HomeContent() {
 
   useEffect(() => {
     if (notification) {
-      const timer = setTimeout(() => setNotification(null), 4000);
+      const timer = setTimeout(() => setNotification(null), 8000);
       return () => clearTimeout(timer);
     };
-  }, [mounted]);
+  }, [notification]);
 
   // --- Financial Calculations (Moved up to fix initialization ReferenceError) ---
   const totalSpent = history.reduce((sum, r) => sum + (r.total_amount || 0), 0);
@@ -235,13 +234,6 @@ function HomeContent() {
     // Apply Font Size
     const sizes: Record<string, string> = { sm: "14px", base: "16px", lg: "18px", xl: "20px" };
     root.style.fontSize = sizes[profile.font_size] || "16px";
-
-    // Manage Custom Cursor visibility
-    if (profile.use_custom_cursor === false) {
-      root.classList.add("no-custom-cursor");
-    } else {
-      root.classList.remove("no-custom-cursor");
-    }
   }, [profile.theme, profile.font_size, mounted]);
 
   // Helper to build gradient string
@@ -263,7 +255,7 @@ function HomeContent() {
     
     const { data, error } = await supabase
       .from("messages")
-      .select("id, content, created_at, sender:sender_id(username, avatar_url)")
+      .select("id, content, created_at, sender:sender_id(id, username, avatar_url)")
       .eq("receiver_id", userId)
       .order("created_at", { ascending: false })
       .limit(5);
@@ -711,10 +703,13 @@ function HomeContent() {
       style={{ background: profile.theme === "custom" ? getGradientStyle() : undefined }}
     >
       {notification && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-top-4 duration-500">
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-top-4 duration-500 group">
           <div className={`glass px-6 py-3 rounded-2xl flex items-center gap-3 border-l-4 shadow-2xl ${notification.type === 'error' ? 'border-destructive' : 'border-emerald-500'}`}>
             {notification.type === 'error' ? <X className="w-4 h-4 text-destructive" /> : <Check className="w-4 h-4 text-emerald-500" />}
             <p className="text-sm font-bold">{notification.message}</p>
+            <button onClick={() => setNotification(null)} className="ml-2 opacity-50 hover:opacity-100 transition-opacity">
+              <X className="w-3 h-3" />
+            </button>
           </div>
         </div>
       )}
@@ -1488,7 +1483,10 @@ function HomeContent() {
               <CardTitle className="text-lg flex items-center gap-2">
                 <MessageSquare className="w-5 h-5 text-primary" /> Recent Nudges
               </CardTitle>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => setIsNudgesModalOpen(false)}>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => {
+                setIsNudgesModalOpen(false);
+                setSelectedFriend(null);
+              }}>
                 <X className="w-4 h-4" />
               </Button>
             </CardHeader>
@@ -1504,7 +1502,21 @@ function HomeContent() {
                       )}
                     </div>
                     <div className="flex-1">
-                      <p className="text-xs font-bold text-primary mb-1">{msg.sender?.username || "Someone"}</p>
+                      <div className="flex justify-between items-start">
+                        <p className="text-xs font-bold text-primary mb-1">{msg.sender?.username || "Someone"}</p>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-6 w-6 rounded-full -mt-1 -mr-2 hover:bg-primary/20"
+                          onClick={() => {
+                            if (msg.sender) {
+                              setSelectedFriend({ id: msg.sender.id, username: msg.sender.username, avatar_url: msg.sender.avatar_url });
+                            }
+                          }}
+                        >
+                          <Send className="w-3 h-3 -rotate-45" />
+                        </Button>
+                      </div>
                       <p className="text-sm italic leading-relaxed text-foreground">"{msg.content}"</p>
                       <p className="text-[9px] text-muted-foreground mt-2 font-medium">
                         {new Date(msg.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -1519,11 +1531,100 @@ function HomeContent() {
                 </div>
               )}
             </CardContent>
-            <CardHeader className="pt-0 border-t bg-muted/10">
-              <p className="text-[10px] text-center text-muted-foreground italic">
-                Encourage your friends to boost their Eco-Score!
-              </p>
+            <CardHeader className="pt-4 border-t bg-muted/10 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-1">Send a Nudge</p>
+                {selectedFriend && (
+                  <button 
+                    onClick={() => setSelectedFriend(null)}
+                    className="text-[10px] text-primary hover:underline flex items-center gap-1"
+                  >
+                    <X className="w-2 h-2" /> Clear recipient
+                  </button>
+                )}
+              </div>
+              
+              <div className="space-y-2">
+                {!selectedFriend ? (
+                  <select 
+                    className="w-full p-2 text-xs glass border-none rounded-lg bg-background/50 outline-none appearance-none cursor-pointer"
+                    onChange={(e) => {
+                      const friend = friendsData.find(f => f.id === e.target.value);
+                      if (friend) setSelectedFriend(friend);
+                    }}
+                    value=""
+                  >
+                    <option value="" disabled className="bg-background">Choose a friend to nudge...</option>
+                    {friendsData.filter(f => !f.isSelf).map(f => (
+                      <option key={f.id} value={f.id} className="bg-background">{f.username}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="flex items-center gap-2 px-2 py-1 bg-primary/10 rounded-lg border border-primary/20 animate-in slide-in-from-top-1">
+                    <div className="w-5 h-5 rounded-full overflow-hidden border border-background bg-background">
+                       {selectedFriend.avatar_url ? <img src={selectedFriend.avatar_url} className="w-full h-full object-cover" /> : <User className="w-full h-full p-1 text-muted-foreground" />}
+                    </div>
+                    <span className="text-xs font-bold text-primary">To: {selectedFriend.username}</span>
+                  </div>
+                )}
+                
+                <div className="relative">
+                  <Textarea 
+                    placeholder={selectedFriend ? `Message ${selectedFriend.username}...` : "Select a friend above to nudge"}
+                    className="min-h-[80px] text-xs glass border-none pr-10 focus-visible:ring-1 focus-visible:ring-primary/20"
+                    value={messageContent}
+                    onChange={(e) => setMessageContent(e.target.value)}
+                  />
+                  <Button 
+                    size="icon" 
+                    variant="ghost" 
+                    className="absolute bottom-2 right-2 h-8 w-8 rounded-full text-primary hover:bg-primary/10"
+                    onClick={sendMessage}
+                    disabled={!messageContent.trim() || !selectedFriend}
+                  >
+                    <Send className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
+          </Card>
+        </div>
+      )}
+
+      {/* Delete Expense Confirmation Modal */}
+      {itemToDeleteId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-500">
+          <Card className="w-full max-w-sm animate-in zoom-in-95 fade-in slide-in-from-bottom-8 duration-500 overflow-hidden border-destructive/20 shadow-2xl">
+            <CardHeader className="bg-destructive/5 flex flex-row items-center justify-between pb-4 border-b border-destructive/10">
+              <CardTitle className="text-lg text-destructive">Delete Expense?</CardTitle>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => setItemToDeleteId(null)}><X className="w-4 h-4" /></Button>
+            </CardHeader>
+            <CardContent className="pt-8 space-y-6 text-center">
+              <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+                <Trash2 className="w-8 h-8 text-destructive" />
+              </div>
+              <div className="space-y-2">
+                <p className="font-bold">Remove this record?</p>
+                <p className="text-sm text-muted-foreground px-6">
+                  This will permanently delete this expense from your history.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 pt-4">
+                <Button 
+                  variant="destructive" 
+                  className="w-full h-11 font-bold" 
+                  onClick={async () => {
+                    await supabase.from("receipts").delete().eq("id", itemToDeleteId);
+                    setItemToDeleteId(null);
+                    fetchHistory();
+                    setNotification({ message: "Expense deleted", type: "success" });
+                  }}
+                >
+                  Delete
+                </Button>
+                <Button variant="ghost" className="w-full" onClick={() => setItemToDeleteId(null)}>Cancel</Button>
+              </div>
+            </CardContent>
           </Card>
         </div>
       )}
