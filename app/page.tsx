@@ -797,7 +797,7 @@ function HomeContent() {
             <h1 className="text-3xl font-bold">Eco-Budgeter</h1>
           </div>
           <div className="flex items-center gap-4">
-            <div className="hidden sm:flex gap-2 mr-4">
+            <div className="flex gap-2 mr-2 overflow-x-auto pb-1 scrollbar-hide max-w-[140px] xs:max-w-[200px] sm:max-w-none flex-nowrap">
               <Button variant={activeTab === "dashboard" ? "default" : "outline"} onClick={() => setActiveTab("dashboard")}>Dashboard</Button>
               <Button variant={activeTab === "scanner" ? "default" : "outline"} onClick={() => setActiveTab("scanner")}>Scanner</Button>
               <Button variant={activeTab === "friends" ? "default" : "outline"} onClick={() => setActiveTab("friends")}>Friends</Button>
@@ -1550,7 +1550,7 @@ function HomeContent() {
 
             {/* Friend Tabs */}
             {chatPartners.length > 0 && (
-              <div className="flex gap-2 p-2 border-b bg-muted/5 overflow-x-auto scrollbar-hide">
+              <div className="flex gap-2 p-2 border-b bg-muted/5 overflow-x-auto scrollbar-hide flex-shrink-0 flex-nowrap">
                 {chatPartners.map((partner: any) => (
                   <button
                     key={partner.id}
