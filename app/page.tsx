@@ -83,10 +83,31 @@ function HomeContent() {
   // Friends & Messaging State
   const [friendsData, setFriendsData] = useState<any[]>([]);
   const [receivedMessages, setReceivedMessages] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<any>(null);
   const [messageContent, setMessageContent] = useState("");
   const [isNudgesModalOpen, setIsNudgesModalOpen] = useState(false);
+  const [activeNudgeTab, setActiveNudgeTab] = useState<string | null>(null);
+
+  const chatPartners = useMemo(() => {
+    const partners = new Map();
+    receivedMessages.forEach(msg => {
+      const partnerId = msg.sender_id === currentUserId ? msg.receiver_id : msg.sender_id;
+      const partnerData = msg.sender_id === currentUserId ? msg.receiver : msg.sender;
+      if (partnerId && !partners.has(partnerId)) {
+        partners.set(partnerId, partnerData);
+      }
+    });
+    return Array.from(partners.entries()).map(([id, data]) => ({ id, ...data as any }));
+  }, [receivedMessages, currentUserId]);
+
+  useEffect(() => {
+    if (isNudgesModalOpen && !activeNudgeTab && chatPartners.length > 0) {
+      setActiveNudgeTab(chatPartners[0].id);
+      setSelectedFriend(chatPartners[0]);
+    }
+  }, [isNudgesModalOpen, chatPartners, activeNudgeTab]);
 
   // Cursor Following Fluid Shape Refs
   const blobRef = useRef<HTMLDivElement>(null);
@@ -212,12 +233,6 @@ function HomeContent() {
       }
 
       if (data.last_analysis_text) setAiAdvice(JSON.parse(data.last_analysis_text));
-      
-      // Automatically request analysis every day
-      const lastDate = data.last_analysis_date ? new Date(data.last_analysis_date).toDateString() : "";
-      if (lastDate !== new Date().toDateString()) {
-        requestAiAdvice(data);
-      }
     }
   };
 
@@ -253,17 +268,31 @@ function HomeContent() {
   const fetchMessages = async (userId: string) => {
     if (!userId) return;
     
+    // Fetch combined history: sent by user OR received by user
     const { data, error } = await supabase
       .from("messages")
-      .select("id, content, created_at, sender:sender_id(id, username, avatar_url)")
-      .eq("receiver_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(5);
+      .select("id, content, created_at, sender_id, receiver_id, is_read, sender:sender_id(id, username, avatar_url), receiver:receiver_id(id, username, avatar_url)")
+      .or(`receiver_id.eq.${userId},sender_id.eq.${userId}`)
+      .order("created_at", { ascending: true })
+      .limit(15);
 
     if (error) {
       console.error("Error fetching messages:", error);
     } else {
       setReceivedMessages(data || []);
+    }
+
+    // Fetch actual unread count
+    const { count, error: countErr } = await supabase
+      .from("messages")
+      .select("id", { count: 'exact', head: true })
+      .eq("receiver_id", userId)
+      .eq("is_read", false);
+    
+    if (!countErr) {
+      setUnreadCount(count || 0);
+    } else {
+      console.error("Error fetching unread count:", countErr);
     }
   };
 
@@ -314,6 +343,17 @@ function HomeContent() {
     }
   };
 
+  const markMessagesAsRead = async () => {
+    if (!currentUserId) return;
+    const { error } = await supabase
+      .from("messages")
+      .update({ is_read: true })
+      .eq("receiver_id", currentUserId)
+      .eq("is_read", false);
+    
+    if (!error) setUnreadCount(0);
+  };
+
   const sendMessage = async () => {
     if (!messageContent.trim() || !selectedFriend) return;
     
@@ -333,6 +373,7 @@ function HomeContent() {
       setNotification({ message: `Encouragement sent to ${selectedFriend.username}!`, type: "success" });
       setMessageContent("");
       setIsMessageModalOpen(false);
+      if (user) fetchMessages(user.id);
     }
   };
 
@@ -962,11 +1003,11 @@ function HomeContent() {
                 <Trophy className="w-6 h-6 text-amber-500" /> Eco-Leaderboard
               </h2>
               <div className="flex gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setIsNudgesModalOpen(true)} className="relative h-9 rounded-xl hover:bg-primary/10 transition-colors">
+                <Button variant="ghost" size="sm" onClick={() => { setIsNudgesModalOpen(true); markMessagesAsRead(); }} className="relative h-9 rounded-xl hover:bg-primary/10 transition-colors">
                   <MessageSquare className="w-4 h-4 mr-2" /> Nudges
-                  {receivedMessages.length > 0 && (
+                  {unreadCount > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-primary text-[10px] text-primary-foreground rounded-full flex items-center justify-center animate-pulse border-2 border-background font-bold">
-                      {receivedMessages.length}
+                      {unreadCount}
                     </span>
                   )}
                 </Button>
@@ -1478,7 +1519,7 @@ function HomeContent() {
       {/* Received Nudges Modal */}
       {isNudgesModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-500">
-          <Card className="w-full max-w-md animate-in zoom-in-95 fade-in slide-in-from-bottom-8 duration-500 overflow-hidden shadow-2xl">
+          <Card className="w-full max-w-md animate-in zoom-in-95 fade-in slide-in-from-bottom-8 duration-500 overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
             <CardHeader className="flex flex-row items-center justify-between pb-3 border-b bg-muted/20">
               <CardTitle className="text-lg flex items-center gap-2">
                 <MessageSquare className="w-5 h-5 text-primary" /> Recent Nudges
@@ -1486,44 +1527,88 @@ function HomeContent() {
               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => {
                 setIsNudgesModalOpen(false);
                 setSelectedFriend(null);
+                setActiveNudgeTab(null);
               }}>
                 <X className="w-4 h-4" />
               </Button>
             </CardHeader>
-            <CardContent className="pt-4 max-h-[60vh] overflow-y-auto space-y-4">
-              {receivedMessages.length > 0 ? (
-                receivedMessages.map((msg) => (
-                  <div key={msg.id} className="glass p-4 rounded-2xl flex items-start gap-3 border-none bg-primary/5 animate-in slide-in-from-left-2">
-                    <div className="w-10 h-10 rounded-full border bg-background overflow-hidden flex-shrink-0 flex items-center justify-center">
-                      {msg.sender?.avatar_url ? (
-                        <img src={msg.sender.avatar_url} className="w-full h-full object-cover" />
+
+            {/* Friend Tabs */}
+            {chatPartners.length > 0 && (
+              <div className="flex gap-2 p-2 border-b bg-muted/5 overflow-x-auto scrollbar-hide">
+                {chatPartners.map((partner: any) => (
+                  <button
+                    key={partner.id}
+                    onClick={() => {
+                      setActiveNudgeTab(partner.id);
+                      setSelectedFriend(partner);
+                    }}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                      activeNudgeTab === partner.id 
+                        ? 'bg-primary text-primary-foreground shadow-md' 
+                        : 'bg-muted hover:bg-muted/80 text-muted-foreground'
+                    }`}
+                  >
+                    <div className="w-4 h-4 rounded-full overflow-hidden border border-background">
+                      {partner.avatar_url ? (
+                        <img src={partner.avatar_url} className="w-full h-full object-cover" />
                       ) : (
-                        <User className="w-5 h-5 text-muted-foreground" />
+                        <User className="w-full h-full p-0.5" />
                       )}
                     </div>
-                    <div className="flex-1">
-                      <div className="flex justify-between items-start">
-                        <p className="text-xs font-bold text-primary mb-1">{msg.sender?.username || "Someone"}</p>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-6 w-6 rounded-full -mt-1 -mr-2 hover:bg-primary/20"
-                          onClick={() => {
-                            if (msg.sender) {
-                              setSelectedFriend({ id: msg.sender.id, username: msg.sender.username, avatar_url: msg.sender.avatar_url });
-                            }
-                          }}
-                        >
-                          <Send className="w-3 h-3 -rotate-45" />
-                        </Button>
+                    {partner.username || "Unknown"}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <CardContent className="pt-4 flex-1 overflow-y-auto space-y-4 min-h-0">
+              {chatPartners.length > 0 ? (
+                receivedMessages
+                  .filter(msg => 
+                    (msg.sender_id === currentUserId && msg.receiver_id === activeNudgeTab) ||
+                    (msg.sender_id === activeNudgeTab && msg.receiver_id === currentUserId)
+                  )
+                  .map((msg) => {
+                    const isOwn = msg.sender_id === currentUserId;
+                    return (
+                      <div key={msg.id} className={`glass p-4 rounded-2xl flex items-start gap-3 border-none bg-primary/5 animate-in ${isOwn ? 'flex-row-reverse slide-in-from-right-2' : 'slide-in-from-left-2'}`}>
+                        <div className="w-10 h-10 rounded-full border bg-background overflow-hidden flex-shrink-0 flex items-center justify-center">
+                          {msg.sender?.avatar_url ? (
+                            <img src={msg.sender.avatar_url} className="w-full h-full object-cover" />
+                          ) : (
+                            <User className="w-5 h-5 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div className={`flex-1 ${isOwn ? 'text-right' : 'text-left'}`}>
+                          <div className={`flex justify-between items-start ${isOwn ? 'flex-row-reverse' : ''}`}>
+                            <p className="text-xs font-bold text-primary mb-1">
+                              {isOwn ? "You" : (msg.sender?.username || "Someone")}
+                            </p>
+                            {!isOwn && (
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-6 w-6 rounded-full -mt-1 -mr-2 hover:bg-primary/20"
+                                onClick={() => {
+                                  if (msg.sender) {
+                                    setSelectedFriend({ id: msg.sender.id, username: msg.sender.username, avatar_url: msg.sender.avatar_url });
+                                    setActiveNudgeTab(msg.sender.id);
+                                  }
+                                }}
+                              >
+                                <Send className="w-3 h-3 -rotate-45" />
+                              </Button>
+                            )}
+                          </div>
+                          <p className="text-sm italic leading-relaxed text-foreground">{msg.content}</p>
+                          <p className="text-[9px] text-muted-foreground mt-2 font-medium">
+                            {new Date(msg.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-sm italic leading-relaxed text-foreground">"{msg.content}"</p>
-                      <p className="text-[9px] text-muted-foreground mt-2 font-medium">
-                        {new Date(msg.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  </div>
-                ))
+                    );
+                  })
               ) : (
                 <div className="py-20 text-center text-muted-foreground">
                   <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-5" />
