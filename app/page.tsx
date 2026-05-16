@@ -1,4 +1,3 @@
-//AI assisted code
 "use client";
 
 import { useState, useEffect, useRef, useMemo, Suspense } from "react";
