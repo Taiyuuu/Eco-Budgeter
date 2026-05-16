@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Next.js Build Output
+.next/
+out/
+build/
+
+# Static Assets (Images/Videos)
+public/assets/
+public/images/
+
+# Version Control & IDE
+.git/
+.vscode/
+.idea/
+
+# Environment & Secrets
+.env*
+*.local
+secrets/
+
+# Documentation & Logs
+*.md
+logs/
+*.log
+npm-debug.log*
+
+# Testing & Coverage
+coverage/
+.nyc_output/
