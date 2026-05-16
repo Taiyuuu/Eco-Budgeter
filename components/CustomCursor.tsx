@@ -15,6 +15,12 @@ export default function CustomCursor() {
   useEffect(() => {
     setMounted(true);
 
+    // Check for touch device capability
+    const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
+    if (isTouchDevice) {
+      setUseCustom(false);
+    }
+
     const checkCursorPreference = () => {
       setUseCustom(!document.documentElement.classList.contains("no-custom-cursor"));
     };

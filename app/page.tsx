@@ -754,6 +754,22 @@ function HomeContent() {
         </div>
       )}
 
+      {/* Mobile Bottom Navigation */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-background/80 backdrop-blur-lg border-t z-40 px-6 py-3 flex justify-between items-center shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+        <Button variant={activeTab === "dashboard" ? "default" : "ghost"} size="sm" onClick={() => setActiveTab("dashboard")} className="flex flex-col h-auto py-1 gap-1">
+          <BarChart3 className={`w-5 h-5 ${activeTab === "dashboard" ? "text-primary-foreground" : "text-muted-foreground"}`} />
+          <span className="text-[10px] font-bold">Stats</span>
+        </Button>
+        <Button variant={activeTab === "scanner" ? "default" : "ghost"} size="sm" onClick={() => setActiveTab("scanner")} className="flex flex-col h-auto py-1 gap-1">
+          <Upload className={`w-5 h-5 ${activeTab === "scanner" ? "text-primary-foreground" : "text-muted-foreground"}`} />
+          <span className="text-[10px] font-bold">Scanner</span>
+        </Button>
+        <Button variant={activeTab === "friends" ? "default" : "ghost"} size="sm" onClick={() => setActiveTab("friends")} className="flex flex-col h-auto py-1 gap-1">
+          <Users className={`w-5 h-5 ${activeTab === "friends" ? "text-primary-foreground" : "text-muted-foreground"}`} />
+          <span className="text-[10px] font-bold">Friends</span>
+        </Button>
+      </div>
+
       {/* Multi-layered Tahoe Ambient Shapes */}
       <div 
         ref={blobRef}
