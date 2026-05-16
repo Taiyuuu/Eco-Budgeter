@@ -1013,11 +1013,11 @@ function HomeContent() {
           </div>
         ) : activeTab === "friends" ? (
           <div key="friends" className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-700 fill-mode-both max-w-2xl mx-auto">
-            <div className="flex justify-between items-center mb-2">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
               <h2 className="text-2xl font-bold flex items-center gap-2">
                 <Trophy className="w-6 h-6 text-amber-500" /> Eco-Leaderboard
               </h2>
-              <div className="flex gap-2">
+              <div className="flex gap-2 w-full sm:w-auto">
                 <Button variant="ghost" size="sm" onClick={() => { setIsNudgesModalOpen(true); markMessagesAsRead(); }} className="relative h-9 rounded-xl hover:bg-primary/10 transition-colors">
                   <MessageSquare className="w-4 h-4 mr-2" /> Nudges
                   {unreadCount > 0 && (
@@ -1165,8 +1165,8 @@ function HomeContent() {
             )}
 
             {/* History List */}
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div className="flex items-center gap-3">
                 <h2 className="text-2xl font-bold">History</h2>
                 {history.length > 0 && (
                   <div className="hidden sm:flex px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold items-center gap-1 border border-emerald-200">
@@ -1174,11 +1174,11 @@ function HomeContent() {
                   </div>
                 )}
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 w-full sm:w-auto">
                 <Button variant="outline" size="sm" onClick={exportToCSV} disabled={history.length === 0}>
                   <Download className="w-4 h-4 mr-2" /> Export
                 </Button>
-                <Button onClick={() => { 
+                <Button className="flex-1 sm:flex-none" onClick={() => { 
                   setEditingId(null); 
                   setFormData({ ...defaultForm, created_at: new Date().toISOString() }); 
                   setIsModalOpen(true); 

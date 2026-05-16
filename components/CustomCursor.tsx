@@ -12,12 +12,19 @@ export default function CustomCursor() {
   const [mounted, setMounted] = useState(false);
   const [useCustom, setUseCustom] = useState(true);
 
+  // Initialization effect: Runs only once on mount
   useEffect(() => {
     setMounted(true);
 
-    // Check for touch device capability
-    const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
-    if (isTouchDevice) {
+    // Check for touch device capability to disable custom cursor on mobile
+    // We do this inside useEffect to ensure window and navigator are available (client-side)
+    const checkIsTouch = () => {
+      return 'ontouchstart' in window || 
+             navigator.maxTouchPoints > 0 || 
+             window.matchMedia("(pointer: coarse)").matches;
+    };
+
+    if (checkIsTouch()) {
       setUseCustom(false);
     }
 
@@ -30,7 +37,7 @@ export default function CustomCursor() {
     checkCursorPreference();
     
     return () => observer.disconnect();
-  }, [mounted]);
+  }, []); // Only run once on mount
 
   useEffect(() => {
     if (!mounted || !useCustom) {
@@ -87,7 +94,7 @@ export default function CustomCursor() {
       document.documentElement.style.cursor = "";
       cancelAnimationFrame(frameId);
     };
-  }, [mounted, useCustom]);
+  }, [mounted, useCustom]); // This array must remain constant [mounted, useCustom]. Size: 2
 
   if (!mounted || !useCustom) return null;
 
