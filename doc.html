@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eco-Budgeter - Documentation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .glass { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); }
+        .icon-box { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 12px; background: rgba(16, 185, 129, 0.1); color: #059669; margin-bottom: 1rem; }
+        code { font-family: 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace; }
+    </style>
+</head>
+<body class="bg-zinc-50 text-zinc-900 leading-relaxed">
+    <div class="fixed top-0 left-0 w-full h-1 bg-emerald-500 z-50"></div>
+    
+    <div class="max-w-4xl mx-auto px-6 py-12">
+        <header class="mb-16">
+            <div class="flex items-center gap-3 mb-4">
+                <i data-lucide="leaf" class="w-10 h-10 text-emerald-600"></i>
+                <h1 class="text-4xl font-black tracking-tight">Eco-Budgeter</h1>
+            </div>
+            <p class="text-xl text-zinc-600">Smart budgeting with environmental impact analysis and AI-driven insights.</p>
+        </header>
+
+        <nav class="mb-12 border-b pb-6">
+            <ul class="flex flex-wrap gap-x-8 gap-y-2 font-bold text-sm uppercase tracking-widest text-emerald-700">
+                <li><a href="#overview" class="hover:text-emerald-500">Overview</a></li>
+                <li><a href="#setup" class="hover:text-emerald-500">Setup</a></li>
+                <li><a href="#features" class="hover:text-emerald-500">Features</a></li>
+                <li><a href="#technical" class="hover:text-emerald-500">Technical</a></li>
+            </ul>
+        </nav>
+
+        <section id="overview" class="mb-16 scroll-mt-10">
+            <h2 class="text-2xl font-bold mb-4">Overview</h2>
+            <p class="mb-4">Eco-Budgeter is a modern financial tracking application designed to help users manage their personal finances while monitoring their environmental impact. By combining traditional expense tracking with "Eco-Scores," the app encourages sustainable consumer behavior.</p>
+        </section>
+
+        <section id="setup" class="mb-16 scroll-mt-10">
+            <h2 class="text-2xl font-bold mb-4">Getting Started</h2>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border space-y-4">
+                <h3 class="font-bold text-emerald-600">Live Application</h3>
+                <p class="text-sm">The application is deployed and ready to use at:</p>
+                <a href="https://eco-budgeter-app.vercel.app" class="block p-3 bg-zinc-100 rounded-lg text-emerald-700 font-mono text-sm hover:bg-emerald-50 transition-colors">https://eco-budgeter-app.vercel.app</a>
+            </div>
+        </section>
+
+        <section id="features" class="mb-16 scroll-mt-10">
+            <h2 class="text-2xl font-bold mb-6">Core Features</h2>
+            
+            <div class="grid md:grid-cols-2 gap-6">
+                <div class="glass p-6 rounded-3xl">
+                    <div class="icon-box"><i data-lucide="camera" class="w-5 h-5"></i></div>
+                    <h3 class="font-bold mb-2">AI Receipt Scanner</h3>
+                    <p class="text-sm text-zinc-600 mb-3">Harnesses Google Gemini AI to process images. Simply snap a photo to extract:</p>
+                    <ul class="text-xs text-zinc-500 space-y-1 list-disc list-inside">
+                        <li>Automated store identification and categorizing.</li>
+                        <li>Itemized price breakdowns and total calculation.</li>
+                        <li>Eco-Score generation based on item sustainability.</li>
+                        <li>Context-aware eco-tips for better future choices.</li>
+                    </ul>
+                </div>
+
+                <div class="glass p-6 rounded-3xl">
+                    <div class="icon-box"><i data-lucide="bar-chart-3" class="w-5 h-5"></i></div>
+                    <h3 class="font-bold mb-2">Smart Dashboard</h3>
+                    <p class="text-sm text-zinc-600 mb-3">Real-time financial monitoring with automated insights:</p>
+                    <ul class="text-xs text-zinc-500 space-y-1 list-disc list-inside">
+                        <li>Proportional budget tracking (Spending vs. Ideal Daily Goal).</li>
+                        <li>AI Coach: Personalized advice based on spending trends.</li>
+                        <li>Interactive Recharts for categories and payment methods.</li>
+                        <li>One-click CSV exports for advanced record keeping.</li>
+                    </ul>
+                </div>
+
+                <div class="glass p-6 rounded-3xl">
+                    <div class="icon-box"><i data-lucide="users" class="w-5 h-5"></i></div>
+                    <h3 class="font-bold mb-2">Social Networking</h3>
+                    <p class="text-sm text-zinc-600">Gamify your journey toward sustainability with friends:</p>
+                    <ul class="text-xs text-zinc-500 space-y-1 list-disc list-inside">
+                        <li>Global Eco-Leaderboard to compare average scores.</li>
+                        <li>Nudges: Send instant messages to encourage your peers.</li>
+                        <li>Friend discovery via username and request system.</li>
+                        <li>Live presence and sync for competitive tracking.</li>
+                    </ul>
+                </div>
+
+                <div class="glass p-6 rounded-3xl">
+                    <div class="icon-box"><i data-lucide="palette" class="w-5 h-5"></i></div>
+                    <h3 class="font-bold mb-2">Premium Customization</h3>
+                    <p class="text-sm text-zinc-600">A fully adaptable interface tailored to your preferences:</p>
+                    <ul class="text-xs text-zinc-500 space-y-1 list-disc list-inside">
+                        <li>Gradient Builder: Define colors, stops, and directions.</li>
+                        <li>Light, Dark, and System theme synchronization.</li>
+                        <li>Dynamic font scaling for enhanced accessibility.</li>
+                        <li>Customizable profile bios and avatar uploads.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section id="technical" class="mb-16 scroll-mt-10">
+            <h2 class="text-2xl font-bold mb-4">Technical Architecture</h2>
+            <div class="space-y-6">
+                <div>
+                    <h3 class="font-bold text-sm uppercase tracking-widest text-zinc-400 mb-2">Frontend</h3>
+                    <ul class="list-disc list-inside text-sm space-y-1">
+                        <li><strong>Next.js (App Router):</strong> Core framework for routing and SSR.</li>
+                        <li><strong>Tailwind CSS:</strong> Utility-first styling for responsive design.</li>
+                        <li><strong>Lucide React:</strong> Icon library.</li>
+                        <li><strong>Custom Cursor:</strong> Interactive mouse follower that disables on touch devices.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h3 class="font-bold text-sm uppercase tracking-widest text-zinc-400 mb-2">Backend & Services</h3>
+                    <ul class="list-disc list-inside text-sm space-y-1">
+                        <li><strong>Supabase:</strong> Handles Authentication, Database (PostgreSQL), and Storage for receipt photos.</li>
+                        <li><strong>Google Gemini AI:</strong> Processes receipt text/images and generates financial advice.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h3 class="font-bold text-sm uppercase tracking-widest text-zinc-400 mb-2">Mobile Support</h3>
+                    <p class="text-sm">The app is fully responsive. Key mobile optimizations include:</p>
+                    <ul class="list-disc list-inside text-sm mt-2">
+                        <li>A fixed bottom navigation bar for small screens.</li>
+                        <li>Automatic custom cursor disabling on touch events.</li>
+                        <li>Horizontal scrollable tab bars for friends and messaging.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <footer class="border-t pt-8 mt-16 text-center text-zinc-400 text-xs">
+            <p>&copy; 2024 Eco-Budgeter Project. Built with Next.js and Supabase.</p>
+        </footer>
+    </div>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Simple smooth scroll for the navigation
+        document.querySelectorAll('nav a').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelector(this.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
+        });
+    </script>
+</body>
+</html>
